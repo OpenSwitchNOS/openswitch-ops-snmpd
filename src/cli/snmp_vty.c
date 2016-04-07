@@ -2,6 +2,7 @@
 #include <setjmp.h>
 #include <sys/un.h>
 #include <sys/wait.h>
+#include <string.h>
 
 #include <readline/history.h>
 #include <readline/readline.h>
@@ -27,24 +28,18 @@ extern struct ovsdb_idl *idl;
 
 VLOG_DEFINE_THIS_MODULE(snmp_cli);
 
-#ifdef SNMPv3
 static bool snmp_v3_user_exists(const char *user) {
     const struct ovsrec_snmpv3_user *v3user_row = NULL;
     bool user_found = false;
 
     OVSREC_SNMPV3_USER_FOR_EACH(v3user_row, idl) {
-    if (v3user_row != NULL) {
-        if (strncmp(v3user_row->user_name, user, 32) == 0)
+        if (strncmp(v3user_row->user_name, user, MAX_V3_USER_NAME_LENGTH) == 0) {
             user_found = true;
             break;
         }
     }
-    if (user_found){
-        return true;
-    }
-    return false;
+    return user_found;
 }
-#endif
 
 static int snmp_server_host_config(const char *ip, const char *community,
                                    unsigned int port, const char *version,
@@ -54,19 +49,23 @@ static int snmp_server_host_config(const char *ip, const char *community,
     struct ovsdb_idl_txn *status_txn = NULL;
     bool trap_found = false;
 
+    if (!is_valid_ip_address(ip))
+    {
+        vty_out(vty, "  %s %s", OVSDB_INVALID_IPV4_IPV6_ERROR, VTY_NEWLINE);
+        return CMD_SUCCESS;
+    }
+
+
+    if ((strncmp(version, "v3", MAX_VERSION_LENGTH) == 0)) {
+        if (!snmp_v3_user_exists(community)) {
+             vty_out(vty,
+                     "User does not exist. Configure v3 user first.\n");
+             return CMD_SUCCESS;
+         }
+    }
+
     OVSREC_SNMP_TRAP_FOR_EACH(host_row, idl) {
         if (NULL != host_row) {
-            if ((strncmp(type, "v3", 2) == 0)) {
-#ifdef SNMPv3
-                if (!snmp_v3_user_exists(*community)) {
-                    vty_out(vty,
-                            "User does not exist. Configure v3 user first.\n");
-                    return CMD_SUCCESS;
-                }
-#endif /*SNMPv3 */
-                vty_out(vty, "v3 trap is yet to be implemented");
-                return CMD_SUCCESS;
-            }
             if (strncmp(host_row->receiver_address, ip,
                         MAX_IP_STR_LENGTH) == 0 &&
                 ((unsigned int)host_row->receiver_udp_port == port)) {
@@ -903,9 +902,202 @@ DEFUN(no_snmp_community,
       COMMUNITY_STR
       "Specify the name of the community, upto 32bytes\n")
 {
-    vty_out(vty, "community to be unconfigured %s\n", argv[0]);
     return remove_community_name(argv[0]);
 }
+
+
+static int configure_snmpv3_user(const char *user, const char *auth,
+                                 const char *auth_key, const char *priv,
+                                 const char *priv_key)
+{
+    const struct ovsrec_snmpv3_user *v3user_row =NULL;
+    struct ovsdb_idl_txn *status_txn = NULL;
+    int status = 0;
+
+    OVSREC_SNMPV3_USER_FOR_EACH(v3user_row, idl) {
+        if (strncmp(user, v3user_row->user_name,MAX_V3_USER_NAME_LENGTH ) == 0) {
+            vty_out(vty,"The user already exists\n");
+            return CMD_SUCCESS;
+        }
+    }
+
+    status_txn = cli_do_config_start();
+    if (NULL == status_txn)
+    {
+        VLOG_ERR("[%s:%d]: Failed to create OVSDB transaction\n", __FUNCTION__, __LINE__);
+        cli_do_config_abort(NULL);
+        return CMD_OVSDB_FAILURE;
+    }
+
+    v3user_row = ovsrec_snmpv3_user_insert(status_txn);
+
+    if(!auth && !priv){
+        ovsrec_snmpv3_user_set_user_name(v3user_row, user);
+        ovsrec_snmpv3_user_set_auth_protocol(v3user_row,DEFAULT_AUTH);
+        ovsrec_snmpv3_user_set_priv_protocol(v3user_row,DEFAULT_PRIVECY);
+    }
+    else if(!priv){
+        ovsrec_snmpv3_user_set_user_name(v3user_row, user);
+	ovsrec_snmpv3_user_set_auth_protocol(v3user_row,auth);
+	ovsrec_snmpv3_user_set_auth_pass_phrase(v3user_row, auth_key);
+    }
+    else {
+        ovsrec_snmpv3_user_set_user_name(v3user_row, user);
+	ovsrec_snmpv3_user_set_auth_protocol(v3user_row,auth);
+	ovsrec_snmpv3_user_set_auth_pass_phrase(v3user_row, auth_key);
+	ovsrec_snmpv3_user_set_priv_protocol(v3user_row,priv);
+	ovsrec_snmpv3_user_set_priv_pass_phrase(v3user_row, priv_key);
+    }
+    status = cli_do_config_finish(status_txn);
+
+    if(status == TXN_SUCCESS || status == TXN_UNCHANGED){
+        return CMD_SUCCESS;
+    }
+    else{
+        return CMD_OVSDB_FAILURE;
+    }
+}
+
+DEFUN(snmp_v3_user,
+       snmp_v3_user_cmd,
+        "snmpv3 user WORD",
+        SNMPV3_STR
+        "Configure user\n"
+        "Username maximum upto 32 characters\n"
+        )
+{
+    const char *user = argv[0];
+    return configure_snmpv3_user(user, NULL, NULL, NULL, NULL);
+}
+
+DEFUN(snmp_v3_user_sec,
+       snmp_v3_user_sec_cmd,
+        "snmpv3 user WORD auth ( md5 | sha ) auth-pass WORD",
+        SNMPV3_STR
+        "Configure user\n"
+        "Username maximum upto 32 characters\n"
+        "Configure authentication protocol\n"
+        "Configure MD5 authentication protocol\n"
+        "Configure SHA authentication protocol\n"
+        "Configure authentication pass key\n"
+        "Configure key, this can be 8-32 character long\n"
+        )
+{
+	return configure_snmpv3_user(argv[0], argv[1], argv[2], NULL, NULL);
+}
+
+DEFUN(snmp_v3_user_sec_priv,
+       snmp_v3_user_sec_priv_cmd,
+        "snmpv3 user WORD auth ( md5 | sha ) auth-pass WORD priv ( aes | des ) priv-pass WORD",
+        SNMPV3_STR
+        "Configure user\n"
+        "Username maximum upto 32 characters\n"
+        "Configure authentication protocol\n"
+        "Configure MD5 authentication protocol\n"
+        "Configure SHA authentication protocol\n"
+        "Configure authentication pass key\n"
+        "Configure key, this can be 8-32 character long\n"
+        "Configure privecy protocol\n"
+        "Configure AES privecy protocol\n"
+        "Configure DES privecy protocol\n"
+        "Configure privecy pass key\n"
+        "Configure key, this can be 8-32 character long\n"
+        )
+{
+        int i = 0;
+        while (i < argc){
+                vty_out(vty,"argv[%d] : %s\n", i, argv[i]);
+               i++;
+        }
+        return configure_snmpv3_user(argv[0], argv[1], argv[2],  argv[3], argv[4]);
+}
+
+static int unconfigure_snmpv3_user(const char * user) {
+    const struct ovsrec_snmpv3_user *v3user_row = NULL;
+    struct ovsdb_idl_txn *status_txn = NULL;
+    enum ovsdb_idl_txn_status status;
+    bool user_found = false;
+
+    status_txn = cli_do_config_start();
+
+    if (NULL == status_txn)
+    {
+        VLOG_ERR("[%s:%d]: Failed to create OVSDB transaction\n", __FUNCTION__, __LINE__);
+        cli_do_config_abort(NULL);
+        return CMD_OVSDB_FAILURE;
+    }
+
+    OVSREC_SNMPV3_USER_FOR_EACH(v3user_row, idl) {
+        if (strncmp(user, v3user_row->user_name,MAX_V3_USER_NAME_LENGTH ) == 0){
+            ovsrec_snmpv3_user_delete(v3user_row);
+            user_found = true;
+        }
+    }
+
+    if(!user_found) {
+        vty_out(vty,"User is not configured.\n");
+    }
+
+    status = cli_do_config_finish(status_txn);
+
+    if(status == TXN_SUCCESS || status == TXN_UNCHANGED){
+        return CMD_SUCCESS;
+    }
+    else{
+        return CMD_OVSDB_FAILURE;
+    }
+}
+DEFUN(no_snmp_v3_user,
+       no_snmp_v3_user_cmd,
+        "no snmpv3 user WORD",
+        NO_STR
+        SNMPV3_STR
+        "Configure user\n"
+        "Username maximum upto 32 characters\n"
+        )
+{
+    return unconfigure_snmpv3_user(argv[0]);
+}
+
+DEFUN(no_snmp_v3_user_sec,
+       no_snmp_v3_user_sec_cmd,
+        "no snmpv3 user WORD auth ( md5 | sha ) auth-pass WORD",
+        NO_STR
+        SNMPV3_STR
+        "Configure user\n"
+        "Username maximum upto 32 characters\n"
+        "Configure authentication protocol\n"
+        "Configure MD5 authentication protocol\n"
+        "Configure SHA authentication protocol\n"
+        "Configure authentication pass key\n"
+        "Configure key, this can be 8-32 character long\n"
+        )
+{
+	return unconfigure_snmpv3_user(argv[0]);
+}
+
+DEFUN(no_snmp_v3_user_sec_priv,
+       no_snmp_v3_user_sec_priv_cmd,
+        "no snmpv3 user WORD auth ( md5 | sha ) auth-pass WORD priv ( aes | des ) priv-pass WORD",
+        NO_STR
+        SNMPV3_STR
+        "Configure user\n"
+        "Username maximum upto 32 characters\n"
+        "Configure authentication protocol\n"
+        "Configure MD5 authentication protocol\n"
+        "Configure SHA authentication protocol\n"
+        "Configure authentication pass key\n"
+        "Configure key, this can be 8-32 character long\n"
+        "Configure privecy protocol\n"
+        "Configure AES privecy protocol\n"
+        "Configure DES privecy protocol\n"
+        "Configure privecy pass key\n"
+        "Configure key, this can be 8-32 character long\n"
+        )
+{
+        return unconfigure_snmpv3_user(argv[0]);
+}
+
 
 DEFUN(show_snmp_trap,
       show_snmp_trap_cmd,
@@ -997,6 +1189,26 @@ DEFUN(show_snmp_system,
     return CMD_SUCCESS;
 }
 
+DEFUN(show_snmpv3_users,
+      show_snmpv3_users_cmd,
+      "show snmpv3 users",
+      SHOW_STR
+      "snmp version 3 configurations\n"
+      "SNMP version 3 users\n")
+{
+    const struct ovsrec_snmpv3_user *v3user_row = NULL;
+
+	vty_out(vty,"--------------------------------------\n");
+	vty_out(vty, "%-15s%-10s%-10s\n", "User", "AuthMode", "PrivMode");
+	vty_out(vty,"--------------------------------------\n");
+        OVSREC_SNMPV3_USER_FOR_EACH(v3user_row, idl) {
+            vty_out(vty, "%-32s%-10s%-10s\n", v3user_row->user_name,
+                    v3user_row->auth_protocol, v3user_row->priv_protocol);
+        }
+	return CMD_SUCCESS;
+}
+
+
 void snmp_ovsdb_init() {
     /* Add tables/columns needed for SNMP. */
     ovsdb_idl_add_table(idl, &ovsrec_table_system);
@@ -1008,6 +1220,12 @@ void snmp_ovsdb_init() {
     ovsdb_idl_add_column(idl, &ovsrec_snmp_trap_col_type);
     ovsdb_idl_add_column(idl, &ovsrec_snmp_trap_col_community_name);
     ovsdb_idl_add_column(idl, &ovsrec_snmp_trap_col_version);
+    ovsdb_idl_add_table(idl, &ovsrec_table_snmpv3_user);
+    ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_user_name);
+    ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_auth_protocol);
+    ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_auth_pass_phrase);
+    ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_priv_protocol);
+    ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_priv_pass_phrase);
 }
 
 void cli_pre_init() { snmp_ovsdb_init(idl); }
@@ -1033,10 +1251,17 @@ void cli_post_init() {
     install_element(CONFIG_NODE, &no_snmp_system_location_cmd);
     install_element(CONFIG_NODE, &snmp_community_cmd);
     install_element(CONFIG_NODE, &no_snmp_community_cmd);
+    install_element(CONFIG_NODE, &snmp_v3_user_cmd);
+    install_element(CONFIG_NODE, &snmp_v3_user_sec_cmd);
+    install_element(CONFIG_NODE, &snmp_v3_user_sec_priv_cmd);
+    install_element(CONFIG_NODE, &no_snmp_v3_user_cmd);
+    install_element(CONFIG_NODE, &no_snmp_v3_user_sec_cmd);
+    install_element(CONFIG_NODE, &no_snmp_v3_user_sec_priv_cmd);
     install_element(ENABLE_NODE, &show_snmp_agent_port_cmd);
     install_element(ENABLE_NODE, &show_snmp_community_cmd);
     install_element(ENABLE_NODE, &show_snmp_trap_cmd);
     install_element(ENABLE_NODE, &show_snmp_system_cmd);
+    install_element(ENABLE_NODE, &show_snmpv3_users_cmd);
 
     retval = install_show_run_config_subcontext(e_vtysh_config_context,
                                       e_vtysh_config_context_snmp,

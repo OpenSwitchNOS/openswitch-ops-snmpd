@@ -45,6 +45,7 @@ vtysh_ret_val vtysh_config_context_snmp_clientcallback(void *p_private) {
     vtysh_ovsdb_cbmsg_ptr p_msg = (vtysh_ovsdb_cbmsg *)p_private;
     const struct ovsrec_system *psnmp_row = NULL;
     const struct ovsrec_snmp_trap *psnmp_trap_row = NULL;
+    const struct ovsrec_snmpv3_user *v3user_row = NULL;
     size_t i = 0;
     const char *snmp_port = NULL;
     const char *snmp_sys_desc = NULL;
@@ -129,6 +130,39 @@ vtysh_ret_val vtysh_config_context_snmp_clientcallback(void *p_private) {
                     p_msg, "%s %s %s %s %s", "snmp-server host",
                     psnmp_trap_row->receiver_address, psnmp_trap_row->type,
                     "version", psnmp_trap_row->version);
+                continue;
+            }
+        }
+    }
+    OVSREC_SNMPV3_USER_FOR_EACH(v3user_row, idl) {
+        if(v3user_row != NULL) {
+            bool auth_not_default = false;
+            bool priv_not_default = false;
+
+            if(v3user_row->auth_protocol != NULL){
+                if(strncmp(v3user_row->auth_protocol, DEFAULT_AUTH, MAX_PROTOCOL_STR_LENGTH) != 0)
+                    auth_not_default = true;
+            }
+            if (v3user_row->priv_protocol != NULL){
+                if(strncmp(v3user_row->priv_protocol, DEFAULT_PRIVECY, MAX_PROTOCOL_STR_LENGTH) != 0)
+                    priv_not_default = true;
+            }
+            if(auth_not_default && priv_not_default){
+                vtysh_ovsdb_cli_print(
+                    p_msg, "%s %s %s %s %s %s %s %s %s %s", "snmpv3 user",
+                    v3user_row->user_name,"auth", v3user_row->auth_protocol, "auth-pass", v3user_row->auth_pass_phrase,
+                    "priv", v3user_row->priv_protocol, "priv-pass", v3user_row->priv_pass_phrase);
+                continue;
+            }
+            else if(auth_not_default) {
+                vtysh_ovsdb_cli_print(
+                    p_msg, "%s %s %s %s %s %s", "snmpv3 user",
+                    v3user_row->user_name, "auth", v3user_row->auth_protocol, "auth-pass", v3user_row->auth_pass_phrase);
+                continue;
+            }
+            else {
+                vtysh_ovsdb_cli_print(
+                    p_msg, "%s %s", "snmpv3 user", v3user_row->user_name);
                 continue;
             }
         }

@@ -26,6 +26,7 @@
 
 /* Help Strings for SNMP */
 #define SNMP_STR "Configure SNMP\n"
+#define SNMPV3_STR "Configure SNMP version 3\n"
 #define HOST_STR "Configure SNMP trap or inform\n"
 #define AGENT_PORT_STR "The port on which the SNMP master agent listens for SNMP requests\n"
 #define COMMUNITY_STR "The name of the community string. Default is public\n"
@@ -39,6 +40,8 @@
 #define DEFAULT_COMMUNITY_TYPE "public"
 #define DEFAULT_AGENT_PORT 161
 #define DEFAULT_TRAP_RECEIVER_UDP_PORT 162
+#define DEFAULT_AUTH "none"
+#define DEFAULT_PRIVECY "none"
 
 
 /* MAX values */
@@ -47,6 +50,8 @@
 #define MAX_PORT_STR_LENGTH 6
 #define MAX_VERSION_LENGTH 4
 #define MAX_TYPE_LENGTH 7
+#define MAX_V3_USER_NAME_LENGTH 32+1
+#define MAX_PROTOCOL_STR_LENGTH 5
 
 void cli_pre_init();
 void cli_post_init();
