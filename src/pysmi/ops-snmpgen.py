@@ -47,7 +47,7 @@ pyOptimizationLevel = 0
 ignoreErrorsFlag = False
 buildIndexFlag = False
 mappingFile = ''
-clangFormatFlag=False
+clangFormatPath=''
 
 helpMessage = """\
 Usage: %s [--help]
@@ -72,7 +72,7 @@ Usage: %s [--help]
       [--generate-mib-texts]
       [ mibfile [ mibfile [...]]]
       [--mapping-file=<path>]
-      [--clang-format]
+      [--clang-format=<path>]
 Where:
     url      - file, http, https, ftp, sftp schemes are supported.
                Use @mib@ placeholder token in URL location to refer
@@ -89,7 +89,7 @@ try:
          'destination-format=', 'destination-directory=', 'cache-directory=',
          'no-dependencies', 'no-python-compile', 'python-optimization-level=',
          'ignore-errors', 'build-index', 'rebuild', 'dry-run',
-         'generate-mib-texts', 'disable-fuzzy-source', 'mapping-file=', 'clang-format' ]
+         'generate-mib-texts', 'disable-fuzzy-source', 'mapping-file=', 'clang-format=' ]
     )
 except Exception:
     if verboseFlag:
@@ -158,7 +158,7 @@ Software documentation and support at http://pysmi.sf.net
     if opt[0] == '--mapping-file':
         mappingFile = opt[1]
     if opt[0] == '--clang-format':
-        clangFormatFlag = True;
+        clangFormatPath = opt[1]
 
 
 if not mibSearchers:
@@ -234,7 +234,7 @@ writer = CFileWriter(dstDirectory)
 mibCompiler = MibCompiler(
     parserFactory(**smiV1Relaxed)(tempdir=cacheDirectory),
     NetSnmpCodeGen(writer,**dict(mappingFile=mappingFile,
-                                 clangFormatFlag=clangFormatFlag)),
+                                 clangFormatPath=clangFormatPath)),
     writer
 )
 
