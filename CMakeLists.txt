@@ -41,6 +41,8 @@ add_executable (${SNMP} ${SOURCES})
 
 add_subdirectory (src/cli)
 
+add_subdirectory (src/snmptrap)
+
 target_link_libraries (${SNMP}
                        ${OVSCOMMON_LIBRARIES} ${OVSDB_LIBRARIES}
                        -lpthread -lrt -lnetsnmpmibs -lpci -ldl -lnetsnmpagent -lnetsnmp -lcrypto -lm)

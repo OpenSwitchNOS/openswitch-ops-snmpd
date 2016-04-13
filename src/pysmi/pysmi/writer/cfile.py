@@ -28,9 +28,6 @@ class CFileWriter(AbstractWriter):
         fileName = os.path.join(self._path,decode(fileName))
 
         try:
-            if 'custom.c' in fileName or 'custom.h' in fileName:
-                if(os.path.isfile(fileName)):
-                    return
             fd, tfile = tempfile.mkstemp(dir = self._path)
             os.write(fd, encode(data))
             os.close(fd)
