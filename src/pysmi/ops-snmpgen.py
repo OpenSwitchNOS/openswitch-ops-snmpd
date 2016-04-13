@@ -47,7 +47,8 @@ pyOptimizationLevel = 0
 ignoreErrorsFlag = False
 buildIndexFlag = False
 mappingFile = ''
-clangFormatFlag=False
+clangFormatPath = ''
+jsonTables = []
 
 helpMessage = """\
 Usage: %s [--help]
@@ -72,15 +73,14 @@ Usage: %s [--help]
       [--generate-mib-texts]
       [ mibfile [ mibfile [...]]]
       [--mapping-file=<path>]
-      [--clang-format]
+      [--clang-format=<path>]
+      [--jsonTables=<tables>]
 Where:
     url      - file, http, https, ftp, sftp schemes are supported.
                Use @mib@ placeholder token in URL location to refer
                to MIB module name requested.
-    format   - pysnmp format is only supported.""" % (
-          sys.argv[0],
-          '|'.join([ x for x in sorted(debug.flagMap) ])
-      )
+    format   - pysnmp format is only supported.""" % (sys.argv[0],
+          '|'.join([ x for x in sorted(debug.flagMap) ]))
 
 try:
     opts, inputMibs = getopt.getopt(sys.argv[1:], 'hv',
@@ -89,8 +89,7 @@ try:
          'destination-format=', 'destination-directory=', 'cache-directory=',
          'no-dependencies', 'no-python-compile', 'python-optimization-level=',
          'ignore-errors', 'build-index', 'rebuild', 'dry-run',
-         'generate-mib-texts', 'disable-fuzzy-source', 'mapping-file=', 'clang-format' ]
-    )
+         'generate-mib-texts', 'disable-fuzzy-source', 'mapping-file=', 'clang-format=', 'jsonTables='])
 except Exception:
     if verboseFlag:
         sys.stderr.write('ERROR: %s\r\n%s\r\n' % (sys.exc_info()[1], helpMessage))
@@ -158,7 +157,9 @@ Software documentation and support at http://pysmi.sf.net
     if opt[0] == '--mapping-file':
         mappingFile = opt[1]
     if opt[0] == '--clang-format':
-        clangFormatFlag = True;
+        clangFormatPath = opt[1]
+    if opt[0] == '--jsonTables':
+        jsonTables = opt[1].split(',')
 
 
 if not mibSearchers:
@@ -169,19 +170,21 @@ if not mibStubs:
 
 if not mibSources:
     scriptPath = os.path.abspath(os.path.join(os.path.dirname(__file__)))
-    mibSources = [ 'file://'+scriptPath+'/mibs',
+    mibSources = ['file://' + scriptPath + '/mibs',
                    'file:///usr/share/snmp/mibs',
-                   'http://mibs.snmplabs.com/asn1/@mib@' ]
+                   'http://mibs.snmplabs.com/asn1/@mib@']
 else:
     scriptPath = os.path.abspath(os.path.join(os.path.dirname(__file__)))
-    mibSources.append('file://'+scriptPath+'/../../mibs')
+    mibSources.append('file://' + scriptPath + '/../../mibs')
     mibSources.append('file:///usr/share/snmp/mibs')
     mibSources.append('http://mibs.snmplabs.com/asn1/@mib@')
 
 if not mibBorrowers:
     #mibBorrowers = [ ('http://mibs.snmplabs.com/pysnmp/notexts/@mib@', False),
-    #                 ('http://mibs.snmplabs.com/pysnmp/fulltexts/@mib@', True),
-    #                 ('file:///Python27/Lib/site-packages/pysnmp_mibs', True) ]
+    #                 ('http://mibs.snmplabs.com/pysnmp/fulltexts/@mib@',
+    #                 True),
+    #                 ('file:///Python27/Lib/site-packages/pysnmp_mibs', True)
+    #                 ]
     mibBorrowers = []
 
 if inputMibs:
@@ -231,19 +234,14 @@ Try various filenames while searching for MIB module: %s
 # Initialize compiler infrastructure
 writer = CFileWriter(dstDirectory)
 
-mibCompiler = MibCompiler(
-    parserFactory(**smiV1Relaxed)(tempdir=cacheDirectory),
+mibCompiler = MibCompiler(parserFactory(**smiV1Relaxed)(tempdir=cacheDirectory),
     NetSnmpCodeGen(writer,**dict(mappingFile=mappingFile,
-                                 clangFormatFlag=clangFormatFlag)),
-    writer
-)
+                                 clangFormatPath=clangFormatPath,
+                                 jsonTables=jsonTables)),
+    writer)
 
 try:
-    mibCompiler.addSources(
-        *getReadersFromUrls(
-            *mibSources, **dict(fuzzyMatching=doFuzzyMatchingFlag)
-        )
-    )
+    mibCompiler.addSources(*getReadersFromUrls(*mibSources, **dict(fuzzyMatching=doFuzzyMatchingFlag)))
 
     mibCompiler.addSearchers(PyFileSearcher(dstDirectory))
 
@@ -252,9 +250,7 @@ try:
 
     mibCompiler.addSearchers(StubSearcher(*mibStubs))
 
-    mibCompiler.addBorrowers(
-        *[ PyFileBorrower(x[1], genTexts=mibBorrowers[x[0]][1]) for x in enumerate(getReadersFromUrls(*[m[0] for m in mibBorrowers], **dict(lowcaseMatching=False))) ]
-    )
+    mibCompiler.addBorrowers(*[ PyFileBorrower(x[1], genTexts=mibBorrowers[x[0]][1]) for x in enumerate(getReadersFromUrls(*[m[0] for m in mibBorrowers], **dict(lowcaseMatching=False))) ])
 
     processed = mibCompiler.compile(*inputMibs,
                                     **dict(noDeps=nodepsFlag,
@@ -264,11 +260,9 @@ try:
                                            ignoreErrors=ignoreErrorsFlag))
 
     if buildIndexFlag:
-        mibCompiler.buildIndex(
-            processed,
+        mibCompiler.buildIndex(processed,
             dryRun=dryrunFlag,
-            ignoreErrors=ignoreErrorsFlag
-        )
+            ignoreErrors=ignoreErrorsFlag)
 
 except error.PySmiError:
     sys.stderr.write('ERROR: %s\r\n' % sys.exc_info()[1])
