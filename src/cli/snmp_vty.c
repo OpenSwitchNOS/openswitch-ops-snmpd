@@ -1004,11 +1004,6 @@ DEFUN(snmp_v3_user_sec_priv,
         "Configure key, this can be 8-32 character long\n"
         )
 {
-        int i = 0;
-        while (i < argc){
-                vty_out(vty,"argv[%d] : %s\n", i, argv[i]);
-               i++;
-        }
         return configure_snmpv3_user(argv[0], argv[1], argv[2],  argv[3], argv[4]);
 }
 
@@ -1199,11 +1194,12 @@ DEFUN(show_snmpv3_users,
     const struct ovsrec_snmpv3_user *v3user_row = NULL;
 
 	vty_out(vty,"--------------------------------------\n");
-	vty_out(vty, "%-15s%-10s%-10s\n", "User", "AuthMode", "PrivMode");
+	vty_out(vty, "%-32s%-10s%-10s\n", "User", "AuthMode", "PrivMode");
 	vty_out(vty,"--------------------------------------\n");
         OVSREC_SNMPV3_USER_FOR_EACH(v3user_row, idl) {
             vty_out(vty, "%-32s%-10s%-10s\n", v3user_row->user_name,
-                    v3user_row->auth_protocol, v3user_row->priv_protocol);
+                    ((v3user_row->auth_protocol)? v3user_row->auth_protocol : ""),
+                    ((v3user_row->priv_protocol)? v3user_row->priv_protocol : ""));
         }
 	return CMD_SUCCESS;
 }
