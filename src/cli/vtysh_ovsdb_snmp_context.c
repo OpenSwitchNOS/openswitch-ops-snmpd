@@ -54,6 +54,7 @@ vtysh_ret_val vtysh_config_context_snmp_clientcallback(void *p_private) {
     const char *snmp_trap_community = NULL;
     bool trap_rcvr_port_not_default = false;
     bool community_not_default =  false;
+    bool is_v3 = false;
 
     psnmp_row = ovsrec_system_first(idl);
     if (psnmp_row != NULL) {
@@ -101,6 +102,10 @@ vtysh_ret_val vtysh_config_context_snmp_clientcallback(void *p_private) {
             if ((int)psnmp_trap_row->receiver_udp_port != DEFAULT_TRAP_RECEIVER_UDP_PORT)
                 trap_rcvr_port_not_default = true;
 
+            if (strcmp(psnmp_trap_row->version, "v3") == 0)
+                is_v3 = true;
+
+            if(!is_v3) {
             if (community_not_default && trap_rcvr_port_not_default) {
                 vtysh_ovsdb_cli_print(
                     p_msg, "%s %s %s %s %s %s %s %s %lld", "snmp-server host",
@@ -131,6 +136,24 @@ vtysh_ret_val vtysh_config_context_snmp_clientcallback(void *p_private) {
                     psnmp_trap_row->receiver_address, psnmp_trap_row->type,
                     "version", psnmp_trap_row->version);
                 continue;
+            }
+            }
+            else {
+                if (trap_rcvr_port_not_default) {
+                    vtysh_ovsdb_cli_print(
+                        p_msg, "%s %s %s %s %s %s %s %s %lld", "snmp-server host",
+                        psnmp_trap_row->receiver_address, psnmp_trap_row->type,
+                        "version", psnmp_trap_row->version,"user",snmp_trap_community,
+                        "port", psnmp_trap_row->receiver_udp_port);
+                    continue;
+                }
+                else {
+                    vtysh_ovsdb_cli_print(
+                        p_msg, "%s %s %s %s %s %s %s", "snmp-server host",
+                        psnmp_trap_row->receiver_address, psnmp_trap_row->type,
+                        "version", psnmp_trap_row->version,"user",snmp_trap_community);
+                    continue;
+                }
             }
         }
     }
