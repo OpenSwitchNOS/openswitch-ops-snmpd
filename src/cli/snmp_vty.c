@@ -536,7 +536,7 @@ DEFUN(snmp_system_description,
 
 DEFUN(no_snmp_system_description,
       no_snmp_system_description_cmd,
-      "no snmp-server system-description [.LINE]",
+      "no snmp-server system-description {.LINE}",
       NO_STR SNMP_STR
       "Configure system description\n"
       "Specify the system description. maximum upto 64bytes\n")
@@ -641,7 +641,7 @@ DEFUN(snmp_system_contact,
 
 DEFUN(no_snmp_system_contact,
       no_snmp_system_contact_cmd,
-      "no snmp-server system-contact [.LINE]",
+      "no snmp-server system-contact {.LINE}",
       NO_STR
       SNMP_STR
       "Configure system contact\n"
@@ -748,7 +748,7 @@ DEFUN(snmp_system_location,
 
 DEFUN(no_snmp_system_location,
       no_snmp_system_location_cmd,
-      "no snmp-server system-location [.LINE]",
+      "no snmp-server system-location {.LINE}",
       NO_STR
       SNMP_STR
       "Configure system location\n"
@@ -940,6 +940,7 @@ static int configure_snmpv3_user(const char *user, const char *auth,
         ovsrec_snmpv3_user_set_user_name(v3user_row, user);
 	ovsrec_snmpv3_user_set_auth_protocol(v3user_row,auth);
 	ovsrec_snmpv3_user_set_auth_pass_phrase(v3user_row, auth_key);
+        ovsrec_snmpv3_user_set_priv_protocol(v3user_row,DEFAULT_PRIVECY);
     }
     else {
         ovsrec_snmpv3_user_set_user_name(v3user_row, user);
@@ -1004,11 +1005,6 @@ DEFUN(snmp_v3_user_sec_priv,
         "Configure key, this can be 8-32 character long\n"
         )
 {
-        int i = 0;
-        while (i < argc){
-                vty_out(vty,"argv[%d] : %s\n", i, argv[i]);
-               i++;
-        }
         return configure_snmpv3_user(argv[0], argv[1], argv[2],  argv[3], argv[4]);
 }
 
@@ -1198,12 +1194,13 @@ DEFUN(show_snmpv3_users,
 {
     const struct ovsrec_snmpv3_user *v3user_row = NULL;
 
-	vty_out(vty,"--------------------------------------\n");
-	vty_out(vty, "%-15s%-10s%-10s\n", "User", "AuthMode", "PrivMode");
-	vty_out(vty,"--------------------------------------\n");
+	vty_out(vty,"----------------------------------------------------------\n");
+	vty_out(vty, "%-32s%-10s%-10s\n", "User", "AuthMode", "PrivMode");
+	vty_out(vty,"----------------------------------------------------------\n");
         OVSREC_SNMPV3_USER_FOR_EACH(v3user_row, idl) {
             vty_out(vty, "%-32s%-10s%-10s\n", v3user_row->user_name,
-                    v3user_row->auth_protocol, v3user_row->priv_protocol);
+                    v3user_row->auth_protocol,
+                    v3user_row->priv_protocol);
         }
 	return CMD_SUCCESS;
 }
