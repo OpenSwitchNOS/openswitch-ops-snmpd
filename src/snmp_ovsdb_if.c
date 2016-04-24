@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include "vswitch-idl.h"
+#include <unixctl.h>
 
 struct ovsdb_idl *idl;
 unsigned int snmp_idl_seqno;
@@ -61,8 +62,12 @@ snmp_wait(struct ovsdb_idl *idl)
 void *
 snmp_ovsdb_main_thread(void *arg)
 {
+    struct unixctl_server *appctl;
+
     /* Detach thread to avoid memory leak upon exit. */
     pthread_detach(pthread_self());
+
+    appctl = (struct unixctl_server *)arg;
 
     snmp_exit = false;
     while (!snmp_exit) {
@@ -71,10 +76,12 @@ snmp_ovsdb_main_thread(void *arg)
         /* This function updates the Cache by running
            ovsdb_idl_run. */
         snmp_run(idl);
+        unixctl_server_run(appctl);
 
         /* This function adds the file descriptor for the
            DB to monitor using poll_fd_wait. */
         snmp_wait(idl);
+        unixctl_server_wait(appctl);
 
         SNMP_OVSDB_UNLOCK;
         if (snmp_exit) {
@@ -84,6 +91,7 @@ snmp_ovsdb_main_thread(void *arg)
         }
     }
     VLOG_ERR("Exiting OVSDB main thread");
+    unixctl_server_destroy(appctl);
     return NULL;
 }
 
