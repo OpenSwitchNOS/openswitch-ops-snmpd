@@ -346,6 +346,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
       'GAUGE32': 'Gauge32',
       'INTEGER': 'Integer32', # XXX
       'INTEGER32': 'Integer32',
+      'INTEGER64':'Integer64',
       'IPADDRESS': 'IpAddress',
       'NETWORKADDRESS': 'IpAddress',
       'OBJECT IDENTIFIER': 'ObjectIdentifier',
@@ -353,6 +354,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
       'OPAQUE': 'Opaque',
       'TIMETICKS': 'TimeTicks',
       'UNSIGNED32': 'Unsigned32',
+      'UNSIGNED64':'Unsigned64',
       'Counter': 'Counter32',
       'Gauge': 'Gauge32',
       'NetworkAddress': 'IpAddress', # RFC1065-SMI, RFC1155-SMI -> SNMPv2-SMI
@@ -363,6 +365,9 @@ class NetSnmpCodeGen(AbstractCodeGen):
 
     ctypeClasses = {
         'Integer32': 'long',
+        'Integer64':'long long',
+        'Unsigned32':'u_long',
+        'Unsigned64':'unsigned long long',
         'TimeTicks': 'long',
         'OctetString': 'char *',
         'ObjectIdentifier':'oid',
@@ -377,6 +382,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
         'Integer32':'i',
         'OctetString':'s',
         'ObjectIdentifier':'o',
+        'Unsigned32':'u',
         'Gauge32':'u',
         'TimeTicks':'t',
         'IpAddress':'a',
@@ -386,6 +392,9 @@ class NetSnmpCodeGen(AbstractCodeGen):
     }
 
     netsnmpTypes = { 'Integer32':'ASN_INTEGER',
+                    'Integer64':'ASN_INTEGER64',
+                    'Unsigned32':'ASN_UNSIGNED',
+                    'Unsigned64':'ASN_UNSIGNED64',
                     'TimeTicks':'ASN_TIMETICKS',
                     'OctetString':'ASN_OCTET_STR',
                     'ObjectIdentifier':'ASN_OBJECT_ID',
@@ -1343,6 +1352,17 @@ class NetSnmpCodeGen(AbstractCodeGen):
     def genCustomFiles(self, moduleName):
         customFileString = '// Define Custom Functions for ' + moduleName + ' MIB in this fileName'
         self.fileWrite(fileName = moduleName + '_custom.c', data=customFileString)
+        tempStartString = '#ifndef ' + moduleName.upper() + '_CUSTOM_H\n'
+        tempStartString += '#define ' + moduleName.upper() + '_CUSTOM_H\n\n'
+        tempStartString += """#include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-includes.h>
+#include <net-snmp/net-snmp-features.h>
+#include <net-snmp/agent/net-snmp-agent-includes.h>
+#include "vswitch-idl.h"
+
+"""
+        self.customFileHeaderString = tempStartString + self.customFileHeaderString
+        self.customFileHeaderString += '#endif'
         self.fileWrite(fileName = moduleName + '_custom.h', data=self.customFileHeaderString)
         self.genHeaderFile(self.moduleName[0].replace('-','_'))
 
@@ -1427,7 +1447,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                     scalarOvsdbGetString += 'void ovsdb_get_' + scalar['name'] + '(struct ovsdb_idl *idl, char *' + scalar['name'] + '_val_ptr, size_t *' + scalar['name'] + '_val_ptr_len) {\n'
                     if scalarJson['CustomFunction']:
                         scalarOvsdbGetString += scalarJson['CustomFunction'] + '(idl, ' + scalar['name'] + '_val_ptr, ' + scalar['name'] + '_val_ptr_len);\n'
-                        self.customFileHeaderString += 'void '+scalarJson['CustomFunction']+'(struct ovsdb_idl *idl, char *'+scalar['name']+'_val_ptr, size_t *'+scalar['name']+'_val_ptr_len);\n\n'
+                        self.customFileHeaderString += 'void ' + scalarJson['CustomFunction'] + '(struct ovsdb_idl *idl, char *' + scalar['name'] + '_val_ptr, size_t *' + scalar['name'] + '_val_ptr_len);\n\n'
                     else:
                         scalarOvsdbGetString += '*' + scalar['name'] + '_val_ptr = \'\\0\';\n'
                         scalarOvsdbGetString += '*' + scalar['name'] + '_val_ptr_len = 0;\n'
@@ -1435,7 +1455,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                     scalarOvsdbGetString += 'void ovsdb_get_' + scalar['name'] + '(struct ovsdb_idl *idl, oid *' + scalar['name'] + '_val_ptr, size_t *' + scalar['name'] + '_val_ptr_len) {\n'
                     if scalarJson['CustomFunction']:
                         scalarOvsdbGetString += scalarJson['CustomFunction'] + '(idl, ' + scalar['name'] + '_val_ptr, ' + scalar['name'] + '_val_ptr_len);\n'
-                        self.customFileHeaderString += 'void '+scalarJson['CustomFunction']+'(struct ovsdb_idl *idl, oid *'+scalar['name']+'_val_ptr, size_t *'+scalar['name']+'_val_ptr_len);\n\n'
+                        self.customFileHeaderString += 'void ' + scalarJson['CustomFunction'] + '(struct ovsdb_idl *idl, oid *' + scalar['name'] + '_val_ptr, size_t *' + scalar['name'] + '_val_ptr_len);\n\n'
                     else:
                         scalarOvsdbGetString += '*' + scalar['name'] + '_val_ptr = (oid)NULL;\n'
                         scalarOvsdbGetString += '*' + scalar['name'] + '_val_ptr_len = 0;\n'
@@ -1443,7 +1463,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                     scalarOvsdbGetString += 'void ovsdb_get_' + scalar['name'] + '(struct ovsdb_idl *idl, ' + self.ctypeClasses[scalarType] + ' *' + scalar['name'] + '_val_ptr) {\n'
                     if scalarJson['CustomFunction']:
                         scalarOvsdbGetString += scalarJson['CustomFunction'] + '(idl, ' + scalar['name'] + '_val_ptr);\n'
-                        self.customFileHeaderString += 'void '+scalarJson['CustomFunction']+'(struct ovsdb_idl *idl, '+self.ctypeClasses[scalarType]+' *'+scalar['name']+'_val_ptr);\n\n'
+                        self.customFileHeaderString += 'void ' + scalarJson['CustomFunction'] + '(struct ovsdb_idl *idl, ' + self.ctypeClasses[scalarType] + ' *' + scalar['name'] + '_val_ptr);\n\n'
                     else:
                         scalarOvsdbGetString += '*' + scalar['name'] + '_val_ptr = (' + self.ctypeClasses[scalarType] + ')NULL;\n'
                 scalarOvsdbGetString += '}\n\n'
@@ -1453,7 +1473,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                 scalarOvsdbGetString += 'void ovsdb_get_' + scalar['name'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + scalarJson['OvsTable'] + ' *' + scalarJson['OvsTable'] + '_row, char *' + scalar['name'] + '_val_ptr, size_t *' + scalar['name'] + '_val_ptr_len) {\n'
                 if scalarJson['CustomFunction']:
                     scalarOvsdbGetString += scalarJson['CustomFunction'] + '(idl, ' + scalarJson['OvsTable'] + '_row, ' + scalar['name'] + '_val_ptr, ' + scalar['name'] + '_val_ptr_len);\n'
-                    self.customFileHeaderString += 'void '+scalarJson['CustomFunction']+'(struct ovsdb_idl *idl, const struct ovsrec_'+scalarJson['OvsTable']+' *'+scalarJson['OvsTable']+'_row, char *'+scalar['name']+'_val_ptr, size_t *'+scalar['name']+'_val_ptr_len);\n'
+                    self.customFileHeaderString += 'void ' + scalarJson['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + scalarJson['OvsTable'] + ' *' + scalarJson['OvsTable'] + '_row, char *' + scalar['name'] + '_val_ptr, size_t *' + scalar['name'] + '_val_ptr_len);\n'
                 else:
                     scalarOvsdbGetString += 'char *temp = (char*)'
                     if scalarJson['Type']['Key']:
@@ -1466,7 +1486,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                 scalarOvsdbGetString += 'void ovsdb_get_' + scalar['name'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + scalarJson['OvsTable'] + ' *' + scalarJson['OvsTable'] + '_row, oid *' + scalar['name'] + '_val_ptr, size_t *' + scalar['name'] + '_val_ptr_len) {\n'
                 if scalarJson['CustomFunction']:
                     scalarOvsdbGetString += scalarJson['CustomFunction'] + '(idl,' + scalarJson['OvsTable'] + '_row, ' + scalar['name'] + '_val_ptr, ' + scalar['name'] + '_val_ptr_len);\n'
-                    self.customFileHeaderString += 'void '+scalarJson['CustomFunction']+'(struct ovsdb_idl *idl, const struct ovsrec_'+scalarJson['OvsTable']+' *'+scalarJson['OvsTable']+'_row, oid *'+scalar['name']+'_val_ptr, size_t *'+scalar['name']+'_val_ptr_len);\n'
+                    self.customFileHeaderString += 'void ' + scalarJson['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + scalarJson['OvsTable'] + ' *' + scalarJson['OvsTable'] + '_row, oid *' + scalar['name'] + '_val_ptr, size_t *' + scalar['name'] + '_val_ptr_len);\n'
                 else:
                     scalarOvsdbGetString += 'char *temp = (char *)'
                     if scalarJson['Type']['Key']:
@@ -1486,7 +1506,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                 scalarOvsdbGetString += 'void ovsdb_get_' + scalar['name'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + scalarJson['OvsTable'] + ' *' + scalarJson['OvsTable'] + '_row, ' + self.ctypeClasses[scalarType] + '*' + scalar['name'] + '_val_ptr) {\n'
                 if scalarJson['CustomFunction']:
                     scalarOvsdbGetString += scalarJson['CustomFunction'] + '(idl, ' + scalarJson['OvsTable'] + '_row, ' + scalar['name'] + '_val_ptr);\n'
-                    self.customFileHeaderString += 'void '+scalarJson['CustomFunction']+'(struct ovsdb_idl *idl, const struct ovsrec_'+scalarJson['OvsTable']+' *'+scalarJson['OvsTable']+'_row, '+self.ctypeClasses[scalarType]+' *'+scalar['name']+'_val_ptr);\n'
+                    self.customFileHeaderString += 'void ' + scalarJson['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + scalarJson['OvsTable'] + ' *' + scalarJson['OvsTable'] + '_row, ' + self.ctypeClasses[scalarType] + ' *' + scalar['name'] + '_val_ptr);\n'
                 else:
                     if scalarJson['Type']['Key']:
                         scalarOvsdbGetString += 'char *temp = (char*)'
@@ -1645,6 +1665,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             outStr += 'if(' + self.jsonData[tableName]['SkipFunction'] + '(idl, ' + table + '_row)) {\n'
             outStr += 'continue;\n'
             outStr += '}\n'
+            self.customFileHeaderString += 'int ' + self.jsonData[tableName]['SkipFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + table + ' *' + table + '_row);\n\n'
         for idx in indexes:
             idxTable = self.jsonData[tableName]['Indexes'][idx['name']]['OvsTable']
             idxType = self.getObjTypeString(idx['syntax'])
@@ -1750,7 +1771,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             tableFileString += 'user_context = netsnmp_create_data_list("' + tableName + '",NULL,NULL);\n'
             tableFileString += 'flags = 0;\n\n'
             tableFileString += '_' + tableName + '_initialize_interface(user_context,flags);\n\n'
-            tableFileString += tableName+'_ovsdb_idl_init(idl);\n'
+            tableFileString += tableName + '_ovsdb_idl_init(idl);\n'
             tableFileString += '}\n\n'
             tableFileString += 'void shutdown_' + tableName + '(void) {\n'
             tableFileString += '_' + tableName + '_shutdown_interface(&' + tableName + '_user_context);\n'
@@ -1986,10 +2007,10 @@ class NetSnmpCodeGen(AbstractCodeGen):
             self.fileWrite(fileName=tableName + '_data_get.h',data=tableDataGetHeaderString)
 
             tableDataSetString = """#include <net-snmp/net-snmp-config.h>
-    #include <net-snmp/net-snmp-features.h>
-    #include <net-snmp/net-snmp-includes.h>
-    #include <net-snmp/agent/net-snmp-agent-includes.h>
-    """
+#include <net-snmp/net-snmp-features.h>
+#include <net-snmp/net-snmp-includes.h>
+#include <net-snmp/agent/net-snmp-agent-includes.h>
+"""
             tableDataSetString += '#include "' + tableName + '.h"\n'
             self.fileWrite(fileName=tableName + '_data_set.c',data=tableDataSetString)
 
@@ -1999,10 +2020,10 @@ class NetSnmpCodeGen(AbstractCodeGen):
             self.fileWrite(fileName=tableName + '_data_set.h',data=tableDataSetHeaderString)
 
             tableDataAccessString = """#include <net-snmp/net-snmp-config.h>
-    #include <net-snmp/net-snmp-features.h>
-    #include <net-snmp/net-snmp-includes.h>
-    #include <net-snmp/agent/net-snmp-agent-includes.h>
-    """
+#include <net-snmp/net-snmp-features.h>
+#include <net-snmp/net-snmp-includes.h>
+#include <net-snmp/agent/net-snmp-agent-includes.h>
+"""
             tableDataAccessString += '#include "' + moduleName + '_custom.h"\n'
             tableDataAccessString += '#include "' + tableName + '.h"\n'
             tableDataAccessString += '#include "' + tableName + '_data_access.h"\n'
@@ -2081,7 +2102,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
 """
             tableOvsdbGetString += '#include "' + moduleName + '_custom.h"\n'
             tableOvsdbGetString += '#include "' + tableName + '_ovsdb_get.h"\n\n'
-            tableOvsdbGetString += 'void '+tableName+'_ovsdb_idl_init(struct ovsdb_idl* idl){\n'
+            tableOvsdbGetString += 'void ' + tableName + '_ovsdb_idl_init(struct ovsdb_idl* idl){\n'
             for (ovsdbRow, ovsdbCol) in self.getOvsdbTableColumnsForTable(tableName):
                 tableOvsdbGetString += 'ovsdb_idl_add_column(idl, &ovsrec_' + ovsdbRow + '_col_' + ovsdbCol + ');\n'
             tableOvsdbGetString += '}\n\n'
@@ -2113,7 +2134,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                         tableOvsdbGetString += self.ctypeClasses[idxType] + ' *' + idx['name'] + '_val_ptr) {\n'
                         if dbIdx['CustomFunction']:
                             tableOvsdbGetString += dbIdx['CustomFunction'] + '(idl, ' + rootDbTable + ', ' + idx['name'] + '_val_ptr);\n'
-                            self.customFileHeaderString += 'void ' + dbIdx['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, '+self.ctypeClasses[idxType] + ' *' + idx['name'] + '_val_ptr);\n\n'
+                            self.customFileHeaderString += 'void ' + dbIdx['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, ' + self.ctypeClasses[idxType] + ' *' + idx['name'] + '_val_ptr);\n\n'
                         else:
                             tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')NULL;\n'
                     tableOvsdbGetString += '}\n\n'
@@ -2124,7 +2145,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                         tableOvsdbGetString += 'char *' + idx['name'] + '_val_ptr, size_t* ' + idx['name'] + '_val_ptr_len) {\n'
                         if dbIdx['CustomFunction']:
                             tableOvsdbGetString += dbIdx['CustomFunction'] + '(idl, ' + rootDbTable + '_row, ' + idxTable + '_row, ' + idx['name'] + '_val_ptr, ' + idx['name'] + '_val_ptr_len);\n'
-                            self.customFileHeaderString += 'void '+dbIdx['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, const struct ovsrec_' + idxTable + ' *' + idxTable + '_row, char *' + idx['name'] + '_val_ptr, size_t* ' + idx['name'] + '_val_ptr_len);\n\n'
+                            self.customFileHeaderString += 'void ' + dbIdx['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, const struct ovsrec_' + idxTable + ' *' + idxTable + '_row, char *' + idx['name'] + '_val_ptr, size_t* ' + idx['name'] + '_val_ptr_len);\n\n'
                         else:
                             tableOvsdbGetString += 'char *temp = (char*)'
                             if dbIdx['Type']['Key']:
@@ -2154,7 +2175,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                         tableOvsdbGetString += self.ctypeClasses[idxType] + ' *' + idx['name'] + '_val_ptr) {\n'
                         if dbIdx['CustomFunction']:
                             tableOvsdbGetString += dbIdx['CustomFunction'] + '(idl, ' + rootDbTable + '_row, ' + idxTable + '_row, ' + idx['name'] + '_val_ptr);\n'
-                            self.customFileHeaderString += 'void ' + dbIdx['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, const struct ovsrec_' + idxTable + ' *' + idxTable + '_row, '+self.ctypeClasses[idxType] + ' *' + idx['name'] + '_val_ptr);\n\n'
+                            self.customFileHeaderString += 'void ' + dbIdx['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, const struct ovsrec_' + idxTable + ' *' + idxTable + '_row, ' + self.ctypeClasses[idxType] + ' *' + idx['name'] + '_val_ptr);\n\n'
                         else:
                             if dbIdx['Type']['Key']:
                                 tableOvsdbGetString += 'char *temp = (char*)'
@@ -2206,7 +2227,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                         tableOvsdbGetString += self.ctypeClasses[idxType] + ' *' + idx['name'] + '_val_ptr) {\n'
                         if dbIdx['CustomFunction']:
                             tableOvsdbGetString += dbIdx['CustomFunction'] + '(idl, ' + rootDbTable + '_row, ' + idx['name'] + '_val_ptr);\n'
-                            self.customFileHeaderString += 'void ' + dbIdx['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, '+self.ctypeClasses[idxType] + ' *' + idx['name'] + '_val_ptr);\n\n'
+                            self.customFileHeaderString += 'void ' + dbIdx['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, ' + self.ctypeClasses[idxType] + ' *' + idx['name'] + '_val_ptr);\n\n'
                         else:
                             if dbIdx['Type']['Key']:
                                 tableOvsdbGetString += 'char *temp = (char*)'
@@ -2251,7 +2272,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                         tableOvsdbGetString += self.ctypeClasses[colType] + ' *' + col['name'] + '_val_ptr) {\n'
                         if dbCol['CustomFunction']:
                             tableOvsdbGetString += dbCol['CustomFunction'] + '(idl, ' + rootDbTable + '_row, ' + col['name'] + '_val_ptr);\n'
-                            self.customFileHeaderString += 'void ' + dbCol['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, '+self.ctypeClasses[colType] + ' *' + col['name'] + '_val_ptr);\n\n'
+                            self.customFileHeaderString += 'void ' + dbCol['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, ' + self.ctypeClasses[colType] + ' *' + col['name'] + '_val_ptr);\n\n'
                         else:
                             tableOvsdbGetString += '*' + col['name'] + '_val_ptr = (' + self.ctypeClasses[colType] + ')NULL;\n'
                     tableOvsdbGetString += '\n'
@@ -2293,7 +2314,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                         tableOvsdbGetString += self.ctypeClasses[colType] + ' *' + col['name'] + '_val_ptr) {\n'
                         if dbCol['CustomFunction']:
                             tableOvsdbGetString += dbCol['CustomFunction'] + '(idl, ' + rootDbTable + '_row, ' + colTable + '_row, ' + col['name'] + '_val_ptr);\n'
-                            self.customFileHeaderString += 'void ' + dbCol['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, const struct ovsrec_' + colTable + ' *' + colTable + '_row, '+self.ctypeClasses[colType] + ' *' + col['name'] + '_val_ptr);\n\n'
+                            self.customFileHeaderString += 'void ' + dbCol['CustomFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, const struct ovsrec_' + colTable + ' *' + colTable + '_row, ' + self.ctypeClasses[colType] + ' *' + col['name'] + '_val_ptr);\n\n'
                         else:
                             if dbCol['Type']['Key']:
                                 tableOvsdbGetString += 'char *temp = (char*)'
@@ -2372,7 +2393,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
 """
             tableOvsdbGetHeaderString += '#include "vswitch-idl.h"\n'
             tableOvsdbGetHeaderString += '#include "ovsdb-idl.h"\n\n'
-            tableOvsdbGetHeaderString += 'void '+tableName+'_ovsdb_idl_init(struct ovsdb_idl *idl);\n'
+            tableOvsdbGetHeaderString += 'void ' + tableName + '_ovsdb_idl_init(struct ovsdb_idl *idl);\n'
             for idx in indexes:
                 dbIdx = self.jsonData[tableName]['Indexes'][idx['name']]
                 idxTable = dbIdx['OvsTable']
