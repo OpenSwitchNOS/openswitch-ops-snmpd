@@ -534,18 +534,24 @@ DEFUN(snmp_system_description,
     return configure_snmp_system_description(sys_desc, true);
 }
 
-DEFUN(no_snmp_system_description,
-      no_snmp_system_description_cmd,
-      "no snmp-server system-description [.LINE]",
+DEFUN(no_snmp_system_description_arg,
+      no_snmp_system_description_arg_cmd,
+      "no snmp-server system-description .LINE",
       NO_STR SNMP_STR
       "Configure system description\n"
       "Specify the system description. maximum upto 64bytes\n")
 {
     char *sys_desc;
-    if (argc != 0) {
-        sys_desc = argv_concat(argv, argc, 0);
-        return configure_snmp_system_description(sys_desc, false);
-    } else {
+    sys_desc = argv_concat(argv, argc, 0);
+    return configure_snmp_system_description(sys_desc, false);
+}
+
+DEFUN(no_snmp_system_description,
+      no_snmp_system_description_cmd,
+      "no snmp-server system-description",
+      NO_STR SNMP_STR
+      "Configure system description\n")
+{
         const struct ovsrec_system *row = NULL;
         enum ovsdb_idl_txn_status txn_status;
         struct smap smap_other_config;
@@ -578,7 +584,6 @@ DEFUN(no_snmp_system_description,
             VLOG_ERR(OVSDB_TXN_COMMIT_ERROR);
             return CMD_OVSDB_FAILURE;
         }
-    }
 }
 
 static int configure_system_contact(const char *sys_contact, bool isconfig)
@@ -639,9 +644,9 @@ DEFUN(snmp_system_contact,
     return configure_system_contact(sys_con, true);
 }
 
-DEFUN(no_snmp_system_contact,
-      no_snmp_system_contact_cmd,
-      "no snmp-server system-contact [.LINE]",
+DEFUN(no_snmp_system_contact_arg,
+      no_snmp_system_contact_arg_cmd,
+      "no snmp-server system-contact .LINE",
       NO_STR
       SNMP_STR
       "Configure system contact\n"
@@ -650,42 +655,48 @@ DEFUN(no_snmp_system_contact,
 
 {
     char *sys_con = NULL;
-    if (argc != 0) {
-        sys_con = argv_concat(argv, argc, 0);
-        return configure_system_contact(sys_con, false);
+    sys_con = argv_concat(argv, argc, 0);
+    return configure_system_contact(sys_con, false);
+}
+
+
+DEFUN(no_snmp_system_contact,
+      no_snmp_system_contact_cmd,
+      "no snmp-server system-contact",
+      NO_STR
+      SNMP_STR
+      "Configure system contact\n")
+{
+    const struct ovsrec_system *row = NULL;
+    enum ovsdb_idl_txn_status txn_status;
+    struct smap smap_other_config;
+    struct ovsdb_idl_txn *status_txn = cli_do_config_start();
+
+    if (NULL == status_txn) {
+        VLOG_ERR(OVSDB_TXN_CREATE_ERROR);
+        cli_do_config_abort(status_txn);
+        return CMD_OVSDB_FAILURE;
+    }
+
+    row = ovsrec_system_first(idl);
+
+    if (!row) {
+        VLOG_ERR(OVSDB_ROW_FETCH_ERROR);
+        cli_do_config_abort(status_txn);
+        return CMD_OVSDB_FAILURE;
+    }
+
+    smap_clone(&smap_other_config, &row->other_config);
+    smap_remove(&smap_other_config, "system_contact");
+    ovsrec_system_set_other_config(row, &smap_other_config);
+
+    txn_status = cli_do_config_finish(status_txn);
+    smap_destroy(&smap_other_config);
+    if (txn_status == TXN_SUCCESS || txn_status == TXN_UNCHANGED) {
+        return CMD_SUCCESS;
     } else {
-        const struct ovsrec_system *row = NULL;
-        enum ovsdb_idl_txn_status txn_status;
-        struct smap smap_other_config;
-        struct ovsdb_idl_txn *status_txn = cli_do_config_start();
-
-        if (NULL == status_txn) {
-            VLOG_ERR(OVSDB_TXN_CREATE_ERROR);
-            cli_do_config_abort(status_txn);
-            return CMD_OVSDB_FAILURE;
-        }
-
-        row = ovsrec_system_first(idl);
-
-        if (!row) {
-            VLOG_ERR(OVSDB_ROW_FETCH_ERROR);
-            cli_do_config_abort(status_txn);
-            return CMD_OVSDB_FAILURE;
-        }
-
-        smap_clone(&smap_other_config, &row->other_config);
-        smap_remove(&smap_other_config, "system_contact");
-
-        ovsrec_system_set_other_config(row, &smap_other_config);
-
-        txn_status = cli_do_config_finish(status_txn);
-        smap_destroy(&smap_other_config);
-        if (txn_status == TXN_SUCCESS || txn_status == TXN_UNCHANGED) {
-            return CMD_SUCCESS;
-        } else {
-            VLOG_ERR(OVSDB_TXN_COMMIT_ERROR);
-            return CMD_OVSDB_FAILURE;
-        }
+        VLOG_ERR(OVSDB_TXN_COMMIT_ERROR);
+        return CMD_OVSDB_FAILURE;
     }
 }
 
@@ -746,19 +757,27 @@ DEFUN(snmp_system_location,
     return configure_system_location(sys_loc, true);
 }
 
-DEFUN(no_snmp_system_location,
-      no_snmp_system_location_cmd,
-      "no snmp-server system-location [.LINE]",
+DEFUN(no_snmp_system_location_arg,
+      no_snmp_system_location_arg_cmd,
+      "no snmp-server system-location .LINE",
       NO_STR
       SNMP_STR
       "Configure system location\n"
       "Specify the system location. maximum upto 128bytes\n")
 {
     char *sys_loc = NULL;
-    if (argc != 0) {
-        sys_loc = argv_concat(argv, argc, 0);
-        return configure_system_location(sys_loc, false);
-    } else {
+    sys_loc = argv_concat(argv, argc, 0);
+    return configure_system_location(sys_loc, false);
+}
+
+
+DEFUN(no_snmp_system_location,
+      no_snmp_system_location_cmd,
+      "no snmp-server system-location",
+      NO_STR
+      SNMP_STR
+      "Configure system location\n")
+{
         const struct ovsrec_system *row = NULL;
         enum ovsdb_idl_txn_status txn_status;
         struct smap smap_other_config;
@@ -791,7 +810,6 @@ DEFUN(no_snmp_system_location,
             VLOG_ERR(OVSDB_TXN_COMMIT_ERROR);
             return CMD_OVSDB_FAILURE;
         }
-    }
 }
 
 /*Set SNMPv1/v2c community strings*/
@@ -940,6 +958,7 @@ static int configure_snmpv3_user(const char *user, const char *auth,
         ovsrec_snmpv3_user_set_user_name(v3user_row, user);
 	ovsrec_snmpv3_user_set_auth_protocol(v3user_row,auth);
 	ovsrec_snmpv3_user_set_auth_pass_phrase(v3user_row, auth_key);
+        ovsrec_snmpv3_user_set_priv_protocol(v3user_row,DEFAULT_PRIVECY);
     }
     else {
         ovsrec_snmpv3_user_set_user_name(v3user_row, user);
@@ -1004,11 +1023,6 @@ DEFUN(snmp_v3_user_sec_priv,
         "Configure key, this can be 8-32 character long\n"
         )
 {
-        int i = 0;
-        while (i < argc){
-                vty_out(vty,"argv[%d] : %s\n", i, argv[i]);
-               i++;
-        }
         return configure_snmpv3_user(argv[0], argv[1], argv[2],  argv[3], argv[4]);
 }
 
@@ -1198,12 +1212,13 @@ DEFUN(show_snmpv3_users,
 {
     const struct ovsrec_snmpv3_user *v3user_row = NULL;
 
-	vty_out(vty,"--------------------------------------\n");
-	vty_out(vty, "%-15s%-10s%-10s\n", "User", "AuthMode", "PrivMode");
-	vty_out(vty,"--------------------------------------\n");
+	vty_out(vty,"----------------------------------------------------------\n");
+	vty_out(vty, "%-32s%-10s%-10s\n", "User", "AuthMode", "PrivMode");
+	vty_out(vty,"----------------------------------------------------------\n");
         OVSREC_SNMPV3_USER_FOR_EACH(v3user_row, idl) {
             vty_out(vty, "%-32s%-10s%-10s\n", v3user_row->user_name,
-                    v3user_row->auth_protocol, v3user_row->priv_protocol);
+                    v3user_row->auth_protocol,
+                    v3user_row->priv_protocol);
         }
 	return CMD_SUCCESS;
 }
@@ -1245,10 +1260,13 @@ void cli_post_init() {
     install_element(CONFIG_NODE, &no_snmp_master_agent_cmd);
     install_element(CONFIG_NODE, &snmp_system_description_cmd);
     install_element(CONFIG_NODE, &no_snmp_system_description_cmd);
+    install_element(CONFIG_NODE, &no_snmp_system_description_arg_cmd);
     install_element(CONFIG_NODE, &snmp_system_contact_cmd);
     install_element(CONFIG_NODE, &no_snmp_system_contact_cmd);
+    install_element(CONFIG_NODE, &no_snmp_system_contact_arg_cmd);
     install_element(CONFIG_NODE, &snmp_system_location_cmd);
     install_element(CONFIG_NODE, &no_snmp_system_location_cmd);
+    install_element(CONFIG_NODE, &no_snmp_system_location_arg_cmd);
     install_element(CONFIG_NODE, &snmp_community_cmd);
     install_element(CONFIG_NODE, &no_snmp_community_cmd);
     install_element(CONFIG_NODE, &snmp_v3_user_cmd);
