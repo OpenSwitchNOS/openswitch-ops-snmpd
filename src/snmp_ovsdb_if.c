@@ -51,6 +51,7 @@ restart_snmpd()
         VLOG_ERR("failed to restart snmpd");
     }
 
+    VLOG_DBG("%s SNMP agent is successfully restarted ", __func__);
     return;
 }
 
@@ -75,6 +76,7 @@ generate_snmpd_conf(const struct ovsrec_system* system_row)
     const char* agent_port = smap_get(&system_row->other_config, "snmp_agent_port");
     if(agent_port != NULL) {
         fprintf(fp, "agentAddress udp:%s\n\n", agent_port);
+        VLOG_DBG("%s: SNMP agent port is modified to %s",__func__,agent_port);
     }
     else {
         fprintf(fp, "agentAddress udp:161\n\n");
@@ -88,6 +90,7 @@ generate_snmpd_conf(const struct ovsrec_system* system_row)
     const char* sys_description = smap_get(&system_row->other_config, "system_description");
     if(sys_description != NULL) {
         fprintf(fp, "sysDescr  %s\n", sys_description);
+        VLOG_DBG("%s: sysDescr is modified to %s",__func__,sys_description);
     }
     else {
         fprintf(fp, "sysDescr  \"\" \n");
@@ -96,6 +99,7 @@ generate_snmpd_conf(const struct ovsrec_system* system_row)
     const char* sys_contact = smap_get(&system_row->other_config, "system_contact");
     if(sys_contact != NULL) {
         fprintf(fp, "sysContact  %s\n", sys_contact);
+        VLOG_DBG("%s: sysContact is modified to %s",__func__,sys_contact);
     }
     else {
         fprintf(fp, "sysContact  \"\"\n");
@@ -105,6 +109,7 @@ generate_snmpd_conf(const struct ovsrec_system* system_row)
     const char* sys_location = smap_get(&system_row->other_config, "system_location");
     if(sys_location != NULL) {
         fprintf(fp, "sysLocation  %s\n", sys_location);
+        VLOG_DBG("%s: sysLocation is modified to %s",__func__,sys_location);
     }
     else {
         fprintf(fp, "sysLocation \"\" \n");
@@ -129,6 +134,7 @@ generate_snmpd_conf(const struct ovsrec_system* system_row)
     else {
         for (i = 0; i < agent_len; i++) {
             fprintf(fp, "rocommunity %s\n", *temp_snmp_comms);
+            VLOG_DBG("%s: rocommunity is added %s",__func__,*temp_snmp_comms);
             temp_snmp_comms++;
         }
     }
@@ -159,16 +165,19 @@ generate_snmpd_conf(const struct ovsrec_system* system_row)
                          auth, v3_user_row->auth_pass_phrase,
                          priv, v3_user_row->priv_pass_phrase );
                  fprintf(fp, "rouser %s  %s\n",v3_user_row->user_name, "priv");
+                 VLOG_DBG("%s: New v3 user is added %s",__func__,v3_user_row->user_name);
              }
              else {
                  fprintf(fp, "createUser  %s  %s  %s \n",v3_user_row->user_name,
                          auth, v3_user_row->auth_pass_phrase);
                  fprintf(fp, "rouser %s %s\n",v3_user_row->user_name, "auth");
+                 VLOG_DBG("%s: New v3 user is added %s",__func__,v3_user_row->user_name);
              }
         }
         else {
             fprintf(fp, "createUser  %s \n",v3_user_row->user_name);
             fprintf(fp, "rouser %s\n",v3_user_row->user_name);
+            VLOG_DBG("%s: New v3 user is added %s",__func__,v3_user_row->user_name);
         }
     }
 
