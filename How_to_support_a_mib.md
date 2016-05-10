@@ -145,6 +145,10 @@ For every table in the MIB, the following set of files are generated:
 DEPENDS = "net-snmp ops-utils ops-config-yaml ops-ovsdb libevent openssl ops-supportability"
 ```
 
+SNMP Traps
+-------
+The file for snmp traps is automatically generated, when you run the above script, with code for all the traps in the given MIB File(The file is named `<MIB NAME>_traps.c`). Add this file to your repo and call the respective trap functions for sending the traps in your repo at the appropriate locations. The design for snmp traps is present in the Design doc referenced below. For a sample you can look at the code(`LLDP_MIB_traps.c`) present in ops-lldpd.
+
 References
 ------
 Click [here](documents/user/snmp_design) for the SNMP design.md.
