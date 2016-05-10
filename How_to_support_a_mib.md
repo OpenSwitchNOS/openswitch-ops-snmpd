@@ -9,7 +9,7 @@ Contents
 Location of SNMP infrastructure and MIB files
 ---------------------------------------------
 This document explains how to support a MIB database for a feature using the SNMP infrastructure available in OPS. The infrastructure resides in the **ops-snmpd** repository.
-The feature MIB resides in the feature repository under the *src/snmp/* directory, and includes the dependency MIBs. Some commonly used MIBs are included in the *ops-snmpd* repository under the *netsnmp/mibs* directory. In the case of a new MIB or a modified MIB, smilint is run to check for semantics and syntax errors.
+The MIB feature resides in the feature repository under the *src/snmp/* directory, and includes the dependency MIBs. Some commonly used MIBs are included in the *ops-snmpd* repository under the *netsnmp/mibs* directory. In the case of a new MIB or a modified MIB, smilint is run to check for semantics and syntax errors.
 MIBs can be compiled at any place provided the right path to a MIB is mentioned. The file is generated under the users directory at `/users/`*`user-name`*`/pysnmp/mibs/`. The *libsmi* package provides smilint.
 ```
 wget https://www.ibr.cs.tu-bs.de/projects/libsmi/download/libsmi-0.4.8.tar.gz
@@ -23,7 +23,7 @@ To install the *python Lex-Yacc (Ply)* package:
 ```
 pip install ply
 ```
-1. Understand the one to one (1:1) mapping between the feature MIB and the schema and write a JSON file.
+1. Understand the one to one (1:1) mapping between the MIB feature and the schema,  and write a JSON file.
 The JSON file format follows:
 	- **MIBtype**--The MIB object type (scalar/tabular/trap)
 	- **OvsTable**--Corresponding schema table for the MIB object. It is *null* if there is no one to one (1:1) mapping for the MIB object.
@@ -116,7 +116,7 @@ The files that get generated when supporting the standard LLDP MIB are:
 *LLDP_MIB_plugins.h*
 *LLDP_MIB_scalars.c* -> File containing register/handler/destroy function calls for all the scalars.
 *LLDP_MIB_scalars.h*
-*LLDP_MIB_scalars_ovsdb_get.c* -> File containing functions to get the data from the OVSDB, which will be  a call to the custom convert function. In the custom convert function the developer defines a logic to return the appropriate value.
+*LLDP_MIB_scalars_ovsdb_get.c* -> File containing functions to get the data from the OVSDB, which will be a call to the custom convert function. In the custom convert function the developer defines a logic to return the appropriate value.
 *LLDP_MIB_scalars_ovsdb_get.h*
 For every table in the MIB, the following set of files are generated:
 *lldpPortConfigTable.c* -> This file contains init or destroy calls to the table.
@@ -131,7 +131,7 @@ For every table in the MIB, the following set of files are generated:
 *lldpPortConfigTable_interface.c*
 *lldpPortConfigTable_interface.h*
 *lldpPortConfigTable_oids.h*
-*lldpPortConfigTable_ovsdb_get.c* -> File containing functions to get the data from OVSDB which will be  a call to custom convert function. In the custom convert function the developer will define a logic to return the appropriate value.
+*lldpPortConfigTable_ovsdb_get.c* -> File containing functions to get the data from OVSDB which will be a call to custom convert function. In the custom convert function the developer will define a logic to return the appropriate value.
 *lldpPortConfigTable_ovsdb_get.h*
 3. Cut and paste the generated files into the *feature/src/snmp* directory in the feature repository.
 4.  Modify the custom.c file to return default values and to resolve any type of mismatch between the MIB and the schema.
@@ -143,6 +143,18 @@ For every table in the MIB, the following set of files are generated:
 6.  Add a net-snmp dependency to the feature repository by adding DEPENDS += 'net-snmp'.
 ```
 DEPENDS = "net-snmp ops-utils ops-config-yaml ops-ovsdb libevent openssl ops-supportability"
+```
+
+SNMP traps
+-------
+The file for SNMP traps is automatically generated, when you run `ops-snmpgen.py` script, with code for all the traps in the given MIB File(The file is named `<MIB NAME>_traps.c`). Add this file to your repository and call the respective functions for sending the traps in your repository at the appropriate locations. The design for SNMP traps is documented in the SNMP Design.md (See References). For a sample you can look at the code(`LLDP_MIB_traps.c`) described in ops-lldpd.
+```
+/* In ops-lldpd lldpd.c file calls the generated functions */
+lldpd_send_lldpRemTablesChange_trap(stuct lldpd_hardware *hardware) {
+    /* This is the auto generated function for lldpRemTablesChange trap 
+     * This function is present in LLDP_MIB_traps.c*/
+    send_lldpRemTablesChange();
+}
 ```
 
 References
