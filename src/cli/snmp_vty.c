@@ -830,17 +830,25 @@ static int configure_community_name(const char *community_name_ptr) {
 
     snmp_row = ovsrec_system_first(idl);
 
+    if (snmp_row->n_snmp_communities ==  MAX_ALLOWED_SNMP_COMMUNITIES) {
+        vty_out(vty,"Config rejected : Maximum allowed communities are configured %s",
+                VTY_NEWLINE);
+        cli_do_config_finish(status_txn);
+        return CMD_SUCCESS;
+    }
+
     community_names = xmalloc(sizeof *(snmp_row->snmp_communities) *
                               (snmp_row->n_snmp_communities + 1));
 
     for (i = 0; i < snmp_row->n_snmp_communities; i++) {
-        community_names[i] = snmp_row->snmp_communities[i];
-        if (strncmp(community_names[i], community_name_ptr,
+        if (strncmp(snmp_row->snmp_communities[i], community_name_ptr,
                     MAX_COMMUNITY_LENGTH) == 0) {
             vty_out(vty, "This community is already configured\n");
             free(community_names);
+            cli_do_config_finish(status_txn);
             return CMD_SUCCESS;
         }
+        community_names[i] = snmp_row->snmp_communities[i];
     }
 
     community_names[i] = (char *)community_name_ptr;
