@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+#
 # (c) Copyright 2015 Hewlett Packard Enterprise Development LP
 #
 # GNU Zebra is free software; you can redistribute it and/or modify it
@@ -17,6 +17,9 @@
 # Software Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
 # 02111-1307, USA.
 
+from pytest import raises
+from topology_lib_vtysh.exceptions import DuplicateCommunityException
+from topology_lib_vtysh.exceptions import MaximumCommunitiesException
 
 TOPOLOGY = """
 # +-------+
@@ -42,6 +45,34 @@ def unconfig_snmp_agent_port_test(sw1):
     assert result is None
 
 
+def boundary_config_snmp_agent_port_test(sw1):
+    with sw1.libs.vtysh.Configure() as ctx:
+        ctx.snmp_server_agent_port('1')
+    result = sw1.libs.vtysh.show_snmp_agent_port()
+    assert result['agent_port'] == '1'
+
+
+def boundary_unconfig_snmp_agent_port_test(sw1):
+    with sw1.libs.vtysh.Configure() as ctx:
+        ctx.no_snmp_server_agent_port()
+    result = sw1.libs.vtysh.show_snmp_agent_port()
+    assert result is None
+
+
+def max_boundary_config_snmp_agent_port_test(sw1):
+    with sw1.libs.vtysh.Configure() as ctx:
+        ctx.snmp_server_agent_port('65535')
+    result = sw1.libs.vtysh.show_snmp_agent_port()
+    assert result['agent_port'] == '65535'
+
+
+def max_boundary_unconfig_snmp_agent_port_test(sw1):
+    with sw1.libs.vtysh.Configure() as ctx:
+        ctx.no_snmp_server_agent_port()
+    result = sw1.libs.vtysh.show_snmp_agent_port()
+    assert result is None
+
+
 def config_snmp_community_test(sw1):
     with sw1.libs.vtysh.Configure() as ctx:
         ctx.snmp_server_community('private')
@@ -56,6 +87,59 @@ def unconfig_snmp_community_test(sw1):
     result = sw1.libs.vtysh.show_snmp_community()
     for community in result:
         assert community is not 'private'
+
+
+def duplicate_config_snmp_community_test(sw1):
+    with raises(DuplicateCommunityException):
+        with sw1.libs.vtysh.Configure() as ctx:
+            ctx.snmp_server_community('private')
+            ctx.snmp_server_community('private')
+        result = sw1.libs.vtysh.show_snmp_community()
+        for community in result:
+            assert community == 'private'
+
+
+def duplicate_unconfig_snmp_community_test(sw1):
+    with sw1.libs.vtysh.Configure() as ctx:
+        ctx.no_snmp_server_community('private')
+    result = sw1.libs.vtysh.show_snmp_community()
+    for community in result:
+        assert community is not 'private'
+
+
+def max_communities_allowed_test(sw1):
+    with raises(MaximumCommunitiesException):
+        with sw1.libs.vtysh.Configure() as ctx:
+            ctx.snmp_server_community('1')
+            ctx.snmp_server_community('2')
+            ctx.snmp_server_community('3')
+            ctx.snmp_server_community('4')
+            ctx.snmp_server_community('5')
+            ctx.snmp_server_community('6')
+            ctx.snmp_server_community('7')
+            ctx.snmp_server_community('8')
+            ctx.snmp_server_community('9')
+            ctx.snmp_server_community('10')
+            ctx.snmp_server_community('11')
+
+    result = sw1.libs.vtysh.show_snmp_community()
+    assert result == ['1', '10', '2', '3', '4', '5', '6', '7', '8', '9']
+
+
+def unset_max_communities_allowed_test(sw1):
+    with sw1.libs.vtysh.Configure() as ctx:
+        ctx.no_snmp_server_community('1')
+        ctx.no_snmp_server_community('2')
+        ctx.no_snmp_server_community('3')
+        ctx.no_snmp_server_community('4')
+        ctx.no_snmp_server_community('5')
+        ctx.no_snmp_server_community('6')
+        ctx.no_snmp_server_community('7')
+        ctx.no_snmp_server_community('8')
+        ctx.no_snmp_server_community('9')
+        ctx.no_snmp_server_community('10')
+    result = sw1.libs.vtysh.show_snmp_community()
+    assert bool(result) is False
 
 
 def config_snmp_system_test(sw1):
@@ -81,12 +165,6 @@ def unconfig_snmp_system_test(sw1):
 def config_snmp_v1_trap_test(sw1):
     with sw1.libs.vtysh.Configure() as ctx:
         ctx.snmp_server_host_trap_version('10.1.1.1', 'v1')
-    """
-    sw1('vtysh')
-    sw1('conf t')
-    sw1('snmp-server host 10.1.1.1 trap version v1')
-    sw1('end')
-    """
     result = sw1.libs.vtysh.show_snmp_trap()
     assert result['10.1.1.1']['Type'] == 'trap'
     assert result['10.1.1.1']['Version'] == 'v1'
@@ -175,8 +253,16 @@ def test_vtysh_ct_snmp(topology, step):
     sw1 = topology.get("sw1")
     config_snmp_agent_port_test(sw1)
     unconfig_snmp_agent_port_test(sw1)
+    boundary_config_snmp_agent_port_test(sw1)
+    boundary_unconfig_snmp_agent_port_test(sw1)
+    max_boundary_config_snmp_agent_port_test(sw1)
+    max_boundary_unconfig_snmp_agent_port_test(sw1)
     config_snmp_community_test(sw1)
     unconfig_snmp_community_test(sw1)
+    duplicate_config_snmp_community_test(sw1)
+    duplicate_unconfig_snmp_community_test(sw1)
+    max_communities_allowed_test(sw1)
+    unset_max_communities_allowed_test(sw1)
     config_snmp_system_test(sw1)
     unconfig_snmp_system_test(sw1)
     config_snmp_v1_trap_test(sw1)
