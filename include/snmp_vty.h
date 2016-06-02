@@ -52,6 +52,8 @@
 #define MAX_TYPE_LENGTH 7
 #define MAX_V3_USER_NAME_LENGTH 32+1
 #define MAX_PROTOCOL_STR_LENGTH 5
+#define MAX_ALLOWED_SNMP_COMMUNITIES 10
+#define MAX_ALLOWED_SNMP_TRAPS 30
 
 void cli_pre_init();
 void cli_post_init();

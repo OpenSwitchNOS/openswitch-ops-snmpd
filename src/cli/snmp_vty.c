@@ -48,6 +48,12 @@ static int snmp_server_host_config(const char *ip, const char *community,
     enum ovsdb_idl_txn_status status;
     struct ovsdb_idl_txn *status_txn = NULL;
     bool trap_found = false;
+    static int trap_count = 0;
+
+    if (trap_count > 30) {
+        vty_out(vty,"Configuration rejected : Maximum allowed traps/inofrms are configured\n");
+        return CMD_SUCCESS;
+    }
 
     if (!is_valid_ip_address(ip))
     {
@@ -68,7 +74,9 @@ static int snmp_server_host_config(const char *ip, const char *community,
         if (NULL != host_row) {
             if (strncmp(host_row->receiver_address, ip,
                         MAX_IP_STR_LENGTH) == 0 &&
-                ((unsigned int)host_row->receiver_udp_port == port)) {
+                ((unsigned int)host_row->receiver_udp_port == port) &&
+                strncmp(host_row->version, version, MAX_VERSION_LENGTH) == 0 &&
+                strcmp(host_row->type, type) == 0) {
                 trap_found = true;
                 break;
             }
@@ -97,6 +105,7 @@ static int snmp_server_host_config(const char *ip, const char *community,
     status = cli_do_config_finish(status_txn);
 
     if (status == TXN_SUCCESS || status == TXN_UNCHANGED) {
+        trap_count++;
         return CMD_SUCCESS;
     } else {
         return CMD_OVSDB_FAILURE;
@@ -240,7 +249,9 @@ static int snmp_server_host_unconfig(const char *ip, const char *community,
 
     OVSREC_SNMP_TRAP_FOR_EACH(trap_row, idl) {
             if ((strcmp(ip, trap_row->receiver_address) == 0) &&
-                (port == (unsigned int)trap_row->receiver_udp_port)) {
+                (port == (unsigned int)trap_row->receiver_udp_port) &&
+                (strcmp(ver, trap_row->version) == 0) &&
+                (strcmp(type, trap_row->type) == 0)) {
                 ovsrec_snmp_trap_delete(trap_row);
             }
 
@@ -830,17 +841,25 @@ static int configure_community_name(const char *community_name_ptr) {
 
     snmp_row = ovsrec_system_first(idl);
 
+    if (snmp_row->n_snmp_communities ==  MAX_ALLOWED_SNMP_COMMUNITIES) {
+        vty_out(vty,"Config rejected : Maximum allowed communities are configured %s",
+                VTY_NEWLINE);
+        cli_do_config_finish(status_txn);
+        return CMD_SUCCESS;
+    }
+
     community_names = xmalloc(sizeof *(snmp_row->snmp_communities) *
                               (snmp_row->n_snmp_communities + 1));
 
     for (i = 0; i < snmp_row->n_snmp_communities; i++) {
-        community_names[i] = snmp_row->snmp_communities[i];
-        if (strncmp(community_names[i], community_name_ptr,
+        if (strncmp(snmp_row->snmp_communities[i], community_name_ptr,
                     MAX_COMMUNITY_LENGTH) == 0) {
             vty_out(vty, "This community is already configured\n");
             free(community_names);
+            cli_do_config_finish(status_txn);
             return CMD_SUCCESS;
         }
+        community_names[i] = snmp_row->snmp_communities[i];
     }
 
     community_names[i] = (char *)community_name_ptr;
