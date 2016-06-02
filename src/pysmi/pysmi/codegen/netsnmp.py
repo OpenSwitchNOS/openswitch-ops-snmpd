@@ -671,13 +671,18 @@ class NetSnmpCodeGen(AbstractCodeGen):
         return outStr
 
     def genNotificationType(self, data, classmode=0):
-        name, objects, description, oid = data
+        name, tempobjects, description, oid = data
         label = self.genLabel(name)
         name = self.transOpers(name)
         oidStr, parentOid = oid
         outDict = {}
-        if objects:
-            objects = [{self.moduleName[0] :self.transOpers(obj)} for obj in objects]
+        objects = []
+        if tempobjects:
+            for obj in tempobjects:
+                if self.transOpers(obj) in self._importMap:
+                    objects.append({self._importMap[obj]:self.transOpers(obj)})
+                else:
+                    objects.append({self.moduleName[0]:self.transOpers(obj)})
         outDict['name'] = name
         outDict['oid'] = oid
         outDict['objects'] = objects
@@ -772,12 +777,14 @@ class NetSnmpCodeGen(AbstractCodeGen):
         if 'SimpleSyntax' in syntax or 'Bits' in syntax:
             if name in self.symbolTable[self.moduleName[0]]['_symtable_cols']:
                 outStr = self.genTableColumnCode(name, syntax,units,maxaccess,description,augmention,index,defval,oid)
-            else:
+            elif name in self.symbolTable[self.moduleName[0]]:
                 outStr = self.genScalarCode(name,syntax, units,maxaccess, description, augmention, index, defval, oid)
         elif 'conceptualTable' in syntax:
-            outStr = self.genTableCode(name, syntax,units,maxaccess,description,augmention,index,defval,oid)
+            if name in self.symbolTable[self.moduleName[0]]:
+                outStr = self.genTableCode(name, syntax,units,maxaccess,description,augmention,index,defval,oid)
         elif 'row' in syntax:
-            outStr = self.genTableRowCode(name,syntax,units,maxaccess,description,augmention,index,defval,oid)
+            if name in self.symbolTable[self.moduleName[0]]:
+                outStr = self.genTableRowCode(name,syntax,units,maxaccess,description,augmention,index,defval,oid)
         self.regSym(name, outDict, parentOid)
         if fakeSyms: # fake symbols for INDEX to support SMIv1
             for i in range(len(fakeSyms)):
@@ -809,14 +816,13 @@ class NetSnmpCodeGen(AbstractCodeGen):
         name, declaration = data
         if declaration:
             if not declaration[0] or 'SEQUENCE' not in declaration[0]:
-                parentType, attrs = declaration
                 name = self.transOpers(name)
-                if 'SimpleSyntax' in attrs:
+                if 'SimpleSyntax' in declaration:
                     self.customTypes[name] = {'baseType':attrs['SimpleSyntax']['objType'],
                                               'subType':attrs['SimpleSyntax']['subType']}
-                elif 'Bits' in attrs:
+                elif 'Bits' in declaration:
                     self.customTypes[name] = {'baseType':'Bits'}
-                outDict = attrs
+                outDict = declaration
                 self.regSym(name, outDict)
         outStr = '//' + name + ' genTypeDeclaration'
         return outStr
@@ -1167,6 +1173,12 @@ class NetSnmpCodeGen(AbstractCodeGen):
             ret = self.customTypes[objType]['baseType']
         else:
             ret = objType
+        if ret not in self.ctypeClasses:
+            if ret in self._out:
+                if 'SimpleSyntax' in self._out[ret][1]:
+                    ret = self._out[ret][1]['SimpleSyntax']['objType']
+                elif 'Bits' in self._out[ret][1]:
+                    ret = 'Bits'
         return ret
 
     def genScalarCode(self, name, syntax, units, maxaccess, description, augmention, index, defval, oid):
@@ -1290,6 +1302,16 @@ class NetSnmpCodeGen(AbstractCodeGen):
         if not self.jsonData:
             raise Exception('Could not load json object from the mapping file')
 
+    def addSymbolsFromImports(self, parsedMibs):
+        for tempast in parsedMibs:
+            self.moduleName[0], moduleOid, imports, declarations = parsedMibs[tempast][2]
+            out, importedModules = self.genImports(imports and imports or {})
+            for declr in declarations and declarations or []:
+                if declr:
+                    clausetype = declr[0]
+                    classmode = clausetype == 'typeDeclaration'
+                    self.handlersTable[declr[0]](self, self.prepData(declr[1:], classmode), classmode)
+
     def genCode(self, ast, symbolTable, **kwargs):
         self.genRules['text'] = kwargs.get('genTexts', False)
         self.parsedMibs = kwargs.get('parsedMibs', {})
@@ -1315,6 +1337,14 @@ class NetSnmpCodeGen(AbstractCodeGen):
                 clausetype = declr[0]
                 classmode = clausetype == 'typeDeclaration'
                 self.handlersTable[declr[0]](self, self.prepData(declr[1:], classmode), classmode)
+
+        # Removing the current MIB from this as it was evaluated above
+        tempParsedMibs = {}
+        for key, value in self.parsedMibs.iteritems():
+            if key != self.moduleName[0]:
+                tempParsedMibs[key] = value
+        self.addSymbolsFromImports(tempParsedMibs)
+        self.moduleName[0], moduleOid, imports, declarations = ast
         #for importAst in [x[2] for x in self.parsedMibs.items()]:
         #    tempModuleName, tempModuleOid, tempImports, tempDeclarations =
         #    importAst
@@ -2949,19 +2979,25 @@ class NetSnmpCodeGen(AbstractCodeGen):
         notificationFileString += 'ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_priv_protocol);\n'
         notificationFileString += '}\n\n'
 
+        # Need this to avoid duplicate generation for symbols
+        tempSymCache = set()
+
         for trap in self.notificationSymbols:
             trapSym = self._out[trap]
             trapOid = trapSym['oid'][0]
             trapOid = trapOid.replace('[','{').replace(']','}')
             for obj in trapSym['objects']:
+                objItemStr = obj.items()[0][1]
                 objSym = self.symbolTable[obj.items()[0][0]][obj.items()[0][1]]
+                if objItemStr in tempSymCache:
+                    continue
+                else:
+                    tempSymCache.add(objItemStr)
                 objOid = str(self.genNumericOid(objSym['oid'])).replace('[','{').replace(']','}')
-                notificationFileString += 'static oid objid_' + obj.items()[0][1] + '[] = ' + objOid + ';\n'
-            notificationFileString += '\nint send_' + trap + '(const namespace_type nm_type, struct ovsdb_idl* idl,'
-            objectString = []
+                notificationFileString += 'static oid objid_' + objItemStr + '[] = ' + objOid + ';\n'
+            notificationFileString += '\nint send_' + trap + '(const namespace_type nm_type, struct ovsdb_idl* idl'
             for obj in trapSym['objects']:
-                objectString.append('const char* ' + obj.items()[0][1] + '_value')
-            notificationFileString += ', '.join(objectString)
+                notificationFileString += ', const char* ' + obj.items()[0][1] + '_value'
             notificationFileString += ') {\n'
             notificationFileString += 'const struct ovsrec_snmp_trap *trap_row = ovsrec_snmp_trap_first(idl);'
             notificationFileString += 'if(trap_row == NULL){\n'
