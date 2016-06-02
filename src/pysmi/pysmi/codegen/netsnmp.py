@@ -671,13 +671,18 @@ class NetSnmpCodeGen(AbstractCodeGen):
         return outStr
 
     def genNotificationType(self, data, classmode=0):
-        name, objects, description, oid = data
+        name, tempobjects, description, oid = data
         label = self.genLabel(name)
         name = self.transOpers(name)
         oidStr, parentOid = oid
         outDict = {}
-        if objects:
-            objects = [{self.moduleName[0] :self.transOpers(obj)} for obj in objects]
+        objects = []
+        if tempobjects:
+            for obj in tempobjects:
+                if self.transOpers(obj) in self._importMap:
+                    objects.append({self._importMap[obj]:self.transOpers(obj)})
+                else:
+                    objects.append({self.moduleName[0]:self.transOpers(obj)})
         outDict['name'] = name
         outDict['oid'] = oid
         outDict['objects'] = objects
@@ -809,14 +814,13 @@ class NetSnmpCodeGen(AbstractCodeGen):
         name, declaration = data
         if declaration:
             if not declaration[0] or 'SEQUENCE' not in declaration[0]:
-                parentType, attrs = declaration
                 name = self.transOpers(name)
-                if 'SimpleSyntax' in attrs:
+                if 'SimpleSyntax' in declaration:
                     self.customTypes[name] = {'baseType':attrs['SimpleSyntax']['objType'],
                                               'subType':attrs['SimpleSyntax']['subType']}
-                elif 'Bits' in attrs:
+                elif 'Bits' in declaration:
                     self.customTypes[name] = {'baseType':'Bits'}
-                outDict = attrs
+                outDict = declaration
                 self.regSym(name, outDict)
         outStr = '//' + name + ' genTypeDeclaration'
         return outStr
@@ -1167,6 +1171,12 @@ class NetSnmpCodeGen(AbstractCodeGen):
             ret = self.customTypes[objType]['baseType']
         else:
             ret = objType
+        if ret not in self.ctypeClasses:
+            if ret in self._out:
+                if 'SimpleSyntax' in self._out[ret][1]:
+                    ret = self._out[ret][1]['SimpleSyntax']['objType']
+                elif 'Bits' in self._out[ret][1]:
+                    ret = 'Bits'
         return ret
 
     def genScalarCode(self, name, syntax, units, maxaccess, description, augmention, index, defval, oid):
@@ -1315,6 +1325,14 @@ class NetSnmpCodeGen(AbstractCodeGen):
                 clausetype = declr[0]
                 classmode = clausetype == 'typeDeclaration'
                 self.handlersTable[declr[0]](self, self.prepData(declr[1:], classmode), classmode)
+        for tempast in self.parsedMibs:
+            self.moduleName[0], moduleOid, imports, declarations = self.parsedMibs[tempast][2]
+            out, importedModules = self.genImports(imports and imports or {})
+            for declr in declarations and declarations or []:
+                if declr:
+                    clausetype = declr[0]
+                    classmode = clausetype == 'typeDeclaration'
+                    self.handlersTable[declr[0]](self, self.prepData(declr[1:], classmode), classmode)
         #for importAst in [x[2] for x in self.parsedMibs.items()]:
         #    tempModuleName, tempModuleOid, tempImports, tempDeclarations =
         #    importAst
