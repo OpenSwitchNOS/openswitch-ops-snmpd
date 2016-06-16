@@ -103,10 +103,10 @@ In the above case, additional mapping parameters may be needed as described belo
 For example, when dealing with physical interfaces, a logical interface such as 'Bridge_normal' may need to be skipped. Such skip logic may be defined in this function.
 This mapping file will be located in feature repository under /src/snmp/*feature*_mapping.json.
 2. Generate all the files for the MIB.
-The SNMP infrastructure provides a python script **mibdump.py**. Executing this script with necessary options generates all the files for a given feature MIB.
+The SNMP infrastructure provides a python script **ops-snmpgen.py**. Executing this script with necessary options generates all the files for a given feature MIB.
 Usage:
 ```
-python mibdump.py --mapping-file=[PATH to mapping file] --mib-source='file: [PATH to MIB file]
+python ops-snmpgen.py --mapping-file=[PATH to mapping file] --mib-source='file: [PATH to MIB file]
 ```
 The files are generated in the **/users/*user-name*/.pysnmp/mibs** directory.
 The files that get generated when supporting the standard LLDP MIB are:
