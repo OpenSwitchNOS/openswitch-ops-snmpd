@@ -93,7 +93,7 @@ generate_snmpd_conf(const struct ovsrec_system* system_row)
         VLOG_DBG("%s: sysDescr is modified to %s",__func__,sys_description);
     }
     else {
-        fprintf(fp, "sysDescr  \"\" \n");
+        fprintf(fp, "sysDescr  %s\n", system_row->switch_version);
     }
 
     const char* sys_contact = smap_get(&system_row->other_config, "system_contact");

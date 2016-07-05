@@ -514,7 +514,7 @@ static int configure_snmp_system_description(const char *sys_desc,
     if (isconfig)
         smap_replace(&smap_other_config, "system_description", sys_desc);
     else
-        smap_remove(&smap_other_config, "system_description");
+        smap_replace(&smap_other_config, "system_description", row->switch_version);
 
     ovsrec_system_set_other_config(row, &smap_other_config);
 
@@ -583,7 +583,7 @@ DEFUN(no_snmp_system_description,
         }
 
         smap_clone(&smap_other_config, &row->other_config);
-        smap_remove(&smap_other_config, "system_description");
+        smap_replace(&smap_other_config, "system_description", row->switch_version);
 
         ovsrec_system_set_other_config(row, &smap_other_config);
 
