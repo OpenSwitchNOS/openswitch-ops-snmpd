@@ -19,6 +19,7 @@
 
 
 from time import sleep
+from pytest import mark
 
 TOPOLOGY = """
 # +-------+
@@ -116,6 +117,7 @@ def check_conf_for_configurations(sw1):
 
     assert port_set and descr_set and contact_set and loc_set
 
+@mark.gate
 def test_ct_snmp_functionality(topology, step):
     sw1 = topology.get("sw1")
     config_snmp_agent_port_test(sw1)
