@@ -1047,9 +1047,20 @@ DEFUN(snmp_v3_user_sec_priv,
 
 static int unconfigure_snmpv3_user(const char * user) {
     const struct ovsrec_snmpv3_user *v3user_row = NULL;
+    const struct ovsrec_snmp_trap *trap_row = NULL;
     struct ovsdb_idl_txn *status_txn = NULL;
     enum ovsdb_idl_txn_status status;
     bool user_found = false;
+
+    OVSREC_SNMP_TRAP_FOR_EACH(trap_row, idl) {
+        if (strncmp(user, trap_row->community_name, MAX_V3_USER_NAME_LENGTH)
+           == 0) {
+            vty_out(vty,"Trap receiver is present for above v3 user. %s", VTY_NEWLINE);
+            vty_out(vty,"Please unconfigure the trap receiver first and try again %s",
+                    VTY_NEWLINE);
+            return CMD_SUCCESS;
+        }
+    }
 
     status_txn = cli_do_config_start();
 
