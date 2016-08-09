@@ -34,6 +34,7 @@
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(snmp_plugins);
+#define FEATURE_SNMP_PATH_IF "/usr/lib/snmp/plugins/libintfd_snmp"
 
 typedef void(*plugin_func)(void);
 
@@ -63,6 +64,7 @@ plugins_open_plugin(const char *filename, void *data)
     }
 
     if (!(plcl->ops_snmp_init = lt_dlsym(handle, "ops_snmp_init")) ||
+        !(plcl->ops_snmp_run = lt_dlsym(handle, "ops_snmp_run")) ||
         !(plcl->ops_snmp_destroy = lt_dlsym(handle, "ops_snmp_destroy"))) {
             VLOG_ERR("Couldn't initialize the interface for %s", filename);
             goto err_dlsym;
@@ -136,11 +138,44 @@ do { \
         } \
     } \
 }while(0)
-
+/* Changed for to add a support for Context registration on runtime,
+    Currently, only intfd plugin only was triggered  */
 void
 plugins_snmp_run(void)
 {
-    PLUGINS_CALL(ops_snmp_run);
+   struct plugin_class *plcl;
+    lt_dlhandle handle =0 ;
+    lt_dladvise advise;
+    const char *filename = FEATURE_SNMP_PATH_IF;
+
+    if (!(lt_dladvise_init (&advise)) && !(lt_dladvise_ext (&advise)))
+       {
+       if (!(handle = lt_dlopenadvise(filename, advise))) {
+        VLOG_ERR("Failed loading %s: %s",filename, lt_dlerror());
+        }
+        lt_dladvise_destroy (&advise);
+      }
+
+    if (!(plcl = (struct plugin_class *)malloc(sizeof(struct plugin_class)))) {
+        VLOG_ERR("Couldn't allocate plugin class");
+        goto err_plugin_class;
+    }
+
+    if (!(plcl->ops_snmp_run = lt_dlsym(handle, "ops_snmp_run"))) {
+            VLOG_ERR("Couldn't initialize the interface for %s", filename);
+            goto err_dlsym;
+    }
+
+    plcl->ops_snmp_run();
+    VLOG_INFO("Loaded SNMP plugin library %s", filename);
+
+err_dlsym:
+    free(plcl);
+
+err_plugin_class:
+    if (lt_dlclose(handle)) {
+        VLOG_ERR("Couldn't dlclose %s",filename);
+    }
 }
 
 void

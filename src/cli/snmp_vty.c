@@ -942,6 +942,19 @@ DEFUN(no_snmp_community,
     return remove_community_name(argv[0]);
 }
 
+/*
++ * Find the vrf with matching name.
+ */
+static const struct ovsrec_snmpv3_context* snmp_context_lookup(const char *context_name)
+{
+    const struct ovsrec_snmpv3_context *context_row = NULL;
+    OVSREC_SNMPV3_CONTEXT_FOR_EACH(context_row, idl) {
+        if (strcmp(context_row->name,context_name) == 0) {
+            return context_row;
+        }
+    }
+    return NULL;
+}
 
 static int configure_snmpv3_user(const char *user, const char *auth,
                                  const char *auth_key, const char *priv,
@@ -986,6 +999,78 @@ static int configure_snmpv3_user(const char *user, const char *auth,
 	ovsrec_snmpv3_user_set_priv_protocol(v3user_row,priv);
 	ovsrec_snmpv3_user_set_priv_pass_phrase(v3user_row, priv_key);
     }
+    status = cli_do_config_finish(status_txn);
+
+    if(status == TXN_SUCCESS || status == TXN_UNCHANGED){
+        return CMD_SUCCESS;
+    }
+    else{
+        return CMD_OVSDB_FAILURE;
+    }
+}
+
+static int configure_snmpv3_user_context(const char *user,const char *context)
+{
+
+    const struct ovsrec_snmpv3_user *v3user_row =NULL;
+    const struct ovsrec_snmpv3_user *v3user_context_row =NULL;
+    struct ovsdb_idl_txn *status_txn = NULL;
+    int status = 0;
+    size_t i = 0;
+    const struct ovsrec_snmpv3_context *context_row = NULL;
+
+    OVSREC_SNMPV3_USER_FOR_EACH(v3user_row, idl) {
+        if (strncmp(user, v3user_row->user_name,MAX_V3_USER_NAME_LENGTH ) == 0) {
+            v3user_context_row = v3user_row;
+        }
+        else {
+            vty_out(vty,"The user not exists\n");
+            return CMD_SUCCESS;
+       }
+    }
+    if(context){
+        context_row = snmp_context_lookup(context);
+        if (context_row == NULL) {
+            vty_out(vty,"The Context not found\n");
+            return CMD_SUCCESS;
+        }
+    }
+    if(v3user_context_row)
+    {
+       while (i < v3user_context_row->n_snmpv3_contexts) {
+       if (strncmp(v3user_context_row->snmpv3_contexts[i]->name, context,
+                    MAX_CONTEXT_LENGTH) == 0) {
+            vty_out(vty,"The Context already linked found\n");
+            return CMD_SUCCESS;
+         }
+        i++;
+       }
+    }
+
+    status_txn = cli_do_config_start();
+    if (NULL == status_txn)
+    {
+        VLOG_ERR("[%s:%d]: Failed to create OVSDB transaction\n", __FUNCTION__, __LINE__);
+        cli_do_config_abort(NULL);
+        return CMD_OVSDB_FAILURE;
+    }
+
+    struct ovsrec_snmpv3_context **contexts;
+    contexts = xmalloc (sizeof *v3user_context_row->snmpv3_contexts * (v3user_context_row->n_snmpv3_contexts + 1));
+    for (i = 0; i < v3user_context_row->n_snmpv3_contexts; i++) {
+        if (strncmp(v3user_context_row->snmpv3_contexts[i]->name, context,
+                    MAX_CONTEXT_LENGTH) == 0) {
+        vty_out(vty,"The Context already linked found\n");
+        return CMD_SUCCESS;
+        }
+        contexts[i] = v3user_context_row->snmpv3_contexts[i];
+     }
+   /* struct ovsrec_snmpv3_context **contexts;
+    contexts = xmalloc (sizeof *v3user_context_row->snmpv3_context * (v3user_context_row->n_snmpv3_context + 1));*/
+    struct ovsrec_snmpv3_context *temp_context_row = CONST_CAST(struct ovsrec_snmpv3_context*, context_row);
+    contexts[v3user_context_row->n_snmpv3_contexts] = temp_context_row;
+    ovsrec_snmpv3_user_set_snmpv3_contexts (v3user_context_row, contexts, v3user_context_row->n_snmpv3_contexts + 1);
+    free(contexts);
     status = cli_do_config_finish(status_txn);
 
     if(status == TXN_SUCCESS || status == TXN_UNCHANGED){
@@ -1045,6 +1130,20 @@ DEFUN(snmp_v3_user_sec_priv,
         return configure_snmpv3_user(argv[0], argv[1], argv[2],  argv[3], argv[4]);
 }
 
+DEFUN(snmp_v3_user_context,
+       snmp_v3_user_context_cmd,
+        "snmpv3 user WORD attach context WORD",
+        SNMPV3_STR
+        "Configure user\n"
+        "Username maximum upto 32 characters\n"
+        "Attach context to user\n"
+        "Configure Context name\n"
+        "Contextname maximum upto 32 characters\n"
+        )
+{
+        return configure_snmpv3_user_context(argv[0],argv[1]);
+}
+
 static int unconfigure_snmpv3_user(const char * user) {
     const struct ovsrec_snmpv3_user *v3user_row = NULL;
     struct ovsdb_idl_txn *status_txn = NULL;
@@ -1080,6 +1179,64 @@ static int unconfigure_snmpv3_user(const char * user) {
         return CMD_OVSDB_FAILURE;
     }
 }
+static int unconfigure_snmpv3_user_context(const char * user, const char * context) {
+    const struct ovsrec_snmpv3_user *v3user_row = NULL;
+    const struct ovsrec_snmpv3_user *v3user_context_row = NULL;
+    struct ovsdb_idl_txn *status_txn = NULL;
+    enum ovsdb_idl_txn_status status;
+    bool user_found = false;
+    size_t context_index;
+    bool configured_context =false;
+    int i;
+
+    status_txn = cli_do_config_start();
+
+    if (NULL == status_txn)
+    {
+        VLOG_ERR("[%s:%d]: Failed to create OVSDB transaction\n", __FUNCTION__, __LINE__);
+        cli_do_config_abort(NULL);
+        return CMD_OVSDB_FAILURE;
+    }
+
+    OVSREC_SNMPV3_USER_FOR_EACH(v3user_row, idl) {
+        if (strncmp(user, v3user_row->user_name,MAX_V3_USER_NAME_LENGTH ) == 0){
+            v3user_context_row = v3user_row;
+            user_found = true;
+        }
+    }
+
+    if(!user_found) {
+        vty_out(vty,"User is not configured.\n");
+        return CMD_SUCCESS;
+    }
+    context_index = -1;
+    struct ovsrec_snmpv3_context **contexts;
+    contexts = xmalloc (sizeof *v3user_context_row->snmpv3_contexts * (v3user_context_row->n_snmpv3_contexts - 1));
+    for (i = 0; i < v3user_context_row->n_snmpv3_contexts; i++) {
+        if (strcmp(v3user_context_row->snmpv3_contexts[i]->name, context) ==0) {
+            configured_context = true;
+            continue;
+    }
+        contexts[++context_index] = v3user_context_row->snmpv3_contexts[i];
+    }
+    if (!configured_context) {
+        vty_out(vty, "The context is not configured\n");
+        free(contexts);
+        return CMD_SUCCESS;
+    }
+    ovsrec_snmpv3_user_set_snmpv3_contexts(v3user_context_row, contexts, v3user_context_row->n_snmpv3_contexts - 1);
+    free (contexts);
+
+    status = cli_do_config_finish(status_txn);
+
+    if(status == TXN_SUCCESS || status == TXN_UNCHANGED){
+        return CMD_SUCCESS;
+    }
+    else{
+        return CMD_OVSDB_FAILURE;
+    }
+}
+
 DEFUN(no_snmp_v3_user,
        no_snmp_v3_user_cmd,
         "no snmpv3 user WORD",
@@ -1131,6 +1288,20 @@ DEFUN(no_snmp_v3_user_sec_priv,
         return unconfigure_snmpv3_user(argv[0]);
 }
 
+DEFUN(no_snmp_v3_user_context,
+      no_snmp_v3_user_context_cmd,
+      "no snmpv3 user WORD attach context WORD",
+        NO_STR
+        SNMPV3_STR
+        "Configure user\n"
+        "Username maximum upto 32 characters\n"
+        "Attach context to user\n"
+        "Configure context"
+        "Configure context, this can be 8-32 character long\n"
+        )
+{
+        return unconfigure_snmpv3_user_context(argv[0],argv[1]);
+}
 
 DEFUN(show_snmp_trap,
       show_snmp_trap_cmd,
@@ -1230,7 +1401,7 @@ DEFUN(show_snmpv3_users,
       "SNMP version 3 users\n")
 {
     const struct ovsrec_snmpv3_user *v3user_row = NULL;
-
+    size_t i = 0;
 	vty_out(vty,"----------------------------------------------------------\n");
 	vty_out(vty, "%-32s%-10s%-10s\n", "User", "AuthMode", "PrivMode");
 	vty_out(vty,"----------------------------------------------------------\n");
@@ -1238,10 +1409,250 @@ DEFUN(show_snmpv3_users,
             vty_out(vty, "%-32s%-10s%-10s\n", v3user_row->user_name,
                     v3user_row->auth_protocol,
                     v3user_row->priv_protocol);
+        vty_out(vty, "---------------------\n");
+        vty_out(vty, "SNMPv3 Mapped context\n");
+        vty_out(vty, "---------------------\n");
+
+        while (i < v3user_row->n_snmpv3_contexts) {
+            vty_out(vty, "%s\n", v3user_row->snmpv3_contexts[i]->name);
+            i++;
+         }
+	vty_out(vty,"----------------------------------------------------------\n");
         }
 	return CMD_SUCCESS;
 }
 
+DEFUN(show_snmpv3_context,
+      show_snmpv3_context_cmd,
+      "show snmpv3 context",
+      SHOW_STR
+      "snmp version 3 configurations\n"
+      "SNMP version 3 context\n")
+{
+    const struct ovsrec_snmpv3_context *v3context_row = NULL;
+
+       vty_out(vty,"--------------------------------------------------------------------------\n");
+       vty_out(vty, "%-32s%-32s%-10s\n", "name", "vrf", "community");
+       vty_out(vty,"--------------------------------------------------------------------------\n");
+       OVSREC_SNMPV3_CONTEXT_FOR_EACH(v3context_row, idl) {
+       vty_out(vty, "%-32s%-32s%-10s\n", v3context_row->name,
+                    v3context_row->vrf->name,
+                    v3context_row->community_name);
+        }
+       return CMD_SUCCESS;
+}
+
+/*
+ * Find the vrf with matching name.
+ */
+static const struct ovsrec_vrf* snmp_context_vrf_lookup(const char *vrf_name)
+{
+    const struct ovsrec_vrf *vrf_row = NULL;
+    OVSREC_VRF_FOR_EACH (vrf_row, idl)
+    {
+        if (strcmp(vrf_row->name, vrf_name) == 0) {
+            return vrf_row;
+        }
+    }
+    return NULL;
+}
+
+static bool snmpv3_context_community_lookup(const char *community_name_ptr) {
+   const struct ovsrec_system *snmp_row = NULL;
+   size_t i;
+
+    snmp_row = ovsrec_system_first(idl);
+
+    if (snmp_row != NULL) {
+        for(i =0;i < snmp_row->n_snmp_communities; i++) {
+               if (strncmp(snmp_row->snmp_communities[i], community_name_ptr,
+                    MAX_COMMUNITY_LENGTH) == 0) {
+                   return TRUE;
+               }
+        }
+     }
+
+    return FALSE;
+}
+
+static bool vrf_community_lookup(const char *vrf_name,const char * community)
+{
+    const struct ovsrec_snmpv3_context *v3context_row = NULL;
+    OVSREC_SNMPV3_CONTEXT_FOR_EACH(v3context_row, idl) {
+            if((vrf_name) && (strcmp(v3context_row->vrf->name,vrf_name))==0) {
+	       return TRUE;
+            }
+            else if ((community) && (strcmp(v3context_row->community_name,community)==0)){
+               return TRUE;
+            }
+    }
+    return FALSE;
+}
+
+static int configure_snmpv3_context(const char *context, const char *vrf_name,
+                                 const char *community)
+{
+    const struct ovsrec_snmpv3_context *v3context_row =NULL;
+    const struct ovsrec_vrf *vrf_row = NULL;
+    struct ovsdb_idl_txn *status_txn = NULL;
+    const char *community_name = NULL;
+    int status = 0;
+
+    OVSREC_SNMPV3_CONTEXT_FOR_EACH(v3context_row, idl) {
+        if (strncmp(context,v3context_row->name,MAX_CONTEXT_LENGTH) == 0) {
+            vty_out(vty,"The context already exists\n");
+            return CMD_SUCCESS;
+        }
+    }
+    /* Validationfor VRF and Community ,follwing use case will covered.
+        1. If linked VRF not avalible  in the VRF Table , will throw Error.
+        2. If linked community not avalible in the community Table, will throw Error.
+        3. If VRF and Context not given, Context created with default_vrf and community.
+        4. If default vrf linking not allowed , if already linked.
+        5. if vrf and community alrady linked with any context ,will throw error.
+   */
+    if(vrf_name && community ) {
+        vrf_row = snmp_context_vrf_lookup(vrf_name);
+        community_name = community;
+        if (vrf_row == NULL) {
+            vty_out(vty,"The VRF not found\n");
+            return CMD_SUCCESS;
+        }
+        else if (!snmpv3_context_community_lookup(community_name)) {
+             vty_out(vty,"The community %s not found\n",community_name);
+             return CMD_SUCCESS;
+        }
+        else if(vrf_community_lookup(vrf_name,NULL)) {
+             vty_out(vty,"The %s already attached with another context \n",vrf_name);
+             return CMD_SUCCESS;
+        }
+        else if(vrf_community_lookup(NULL,community_name)) {
+             vty_out(vty,"The %s already attached with another context \n",community_name);
+             return CMD_SUCCESS;
+        }
+    }
+    else if (vrf_community_lookup(DEFAULT_VRF_NAME,DEFAULT_COMMUNITY_TYPE))
+    {
+        vty_out(vty,"The community %s vrf %s already attached with another context \n",DEFAULT_COMMUNITY_TYPE,DEFAULT_VRF);
+        return CMD_SUCCESS;
+    }
+    else {
+         vrf_row = snmp_context_vrf_lookup(DEFAULT_VRF);
+         community_name = DEFAULT_COMMUNITY_TYPE;
+    }
+
+    status_txn = cli_do_config_start();
+
+    v3context_row = ovsrec_snmpv3_context_insert(status_txn);
+
+    if (NULL == status_txn)
+    {
+        VLOG_ERR("[%s:%d]: Failed to create OVSDB transaction\n", __FUNCTION__, __LINE__);
+        cli_do_config_abort(NULL);
+        return CMD_OVSDB_FAILURE;
+    }
+
+    ovsrec_snmpv3_context_set_name(v3context_row, context);
+    ovsrec_snmpv3_context_set_vrf(v3context_row,vrf_row);
+    ovsrec_snmpv3_context_set_community_name(v3context_row,community_name);
+
+    status = cli_do_config_finish(status_txn);
+
+    if(status == TXN_SUCCESS || status == TXN_UNCHANGED){
+        return CMD_SUCCESS;
+    }
+    else{
+        return CMD_OVSDB_FAILURE;
+    }
+}
+
+DEFUN(snmp_v3_context,
+      snmp_v3_context_cmd,
+      "snmpv3 context WORD" ,
+       SNMPV3_STR
+      "Configure context\n"
+      "Contextname maximum upto 32 characters\n"
+      )
+{
+    return configure_snmpv3_context(argv[0],NULL,NULL);
+}
+
+DEFUN(snmp_v3_context_vrf,
+      snmp_v3_context_vrf_cmd,
+      "snmpv3 context WORD vrf VRF community WORD",
+       SNMPV3_STR
+      "Configure context\n"
+      "Contextname maximum upto 32 characters\n"
+      "Configure vrf\n"
+      "Name of the vrf maximum upto 32 characters(Default : vrf_default)\n"
+      "Configure community\n"
+      "Name of the community, max up to 32 characters (Default : public)\n"
+      )
+{
+    return configure_snmpv3_context(argv[0],argv[1],argv[2]);
+}
+
+static int unconfigure_snmpv3_context(const char * context) {
+    const struct ovsrec_snmpv3_context *v3context_row = NULL;
+    struct ovsdb_idl_txn *status_txn = NULL;
+    enum ovsdb_idl_txn_status status;
+    bool user_found = false;
+
+    status_txn = cli_do_config_start();
+
+    if (NULL == status_txn)
+    {
+        VLOG_ERR("[%s:%d]: Failed to create OVSDB transaction\n", __FUNCTION__, __LINE__);
+        cli_do_config_abort(NULL);
+        return CMD_OVSDB_FAILURE;
+    }
+
+    OVSREC_SNMPV3_CONTEXT_FOR_EACH(v3context_row, idl) {
+        if (strncmp(context, v3context_row->name,MAX_V3_USER_NAME_LENGTH ) == 0){
+            ovsrec_snmpv3_context_delete(v3context_row);
+            user_found = true;
+        }
+    }
+
+    if(!user_found) {
+        vty_out(vty,"Conetxt is not configured.\n");
+    }
+
+    status = cli_do_config_finish(status_txn);
+
+    if(status == TXN_SUCCESS || status == TXN_UNCHANGED){
+        return CMD_SUCCESS;
+    }
+    else{
+        return CMD_OVSDB_FAILURE;
+    }
+}
+
+DEFUN(no_snmp_v3_context,
+       no_snmp_v3_context_cmd,
+        "no snmpv3 context WORD",
+        NO_STR
+        SNMPV3_STR
+        CONTEXT_STR
+        "Specify the name of the context maximum upto 32 characters\n"
+        )
+{
+    return unconfigure_snmpv3_context(argv[0]);
+}
+
+DEFUN(no_snmp_v3_context_vrf,
+       no_snmp_v3_context_vrf_cmd,
+       "no snmpv3 context WORD vrf WORD",
+        NO_STR
+        SNMPV3_STR
+        "Specify the name of the context maximum upto 32 characters\n"
+        CONTEXT_STR
+       VRF_STR
+        "Specify the name of the VRF maximum upto 32 characters\n"
+        )
+{
+    return unconfigure_snmpv3_context(argv[0]);
+}
 
 void snmp_ovsdb_init() {
     /* Add tables/columns needed for SNMP. */
@@ -1260,6 +1671,12 @@ void snmp_ovsdb_init() {
     ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_auth_pass_phrase);
     ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_priv_protocol);
     ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_priv_pass_phrase);
+    ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_snmpv3_contexts);
+    ovsdb_idl_add_table(idl, &ovsrec_table_snmpv3_context);
+    ovsdb_idl_add_column(idl, &ovsrec_snmpv3_context_col_name);
+    ovsdb_idl_add_column(idl, &ovsrec_snmpv3_context_col_vrf);
+    ovsdb_idl_add_column(idl, &ovsrec_snmpv3_context_col_community_name);
+
 }
 
 void cli_pre_init() { snmp_ovsdb_init(idl); }
@@ -1291,14 +1708,21 @@ void cli_post_init() {
     install_element(CONFIG_NODE, &snmp_v3_user_cmd);
     install_element(CONFIG_NODE, &snmp_v3_user_sec_cmd);
     install_element(CONFIG_NODE, &snmp_v3_user_sec_priv_cmd);
+    install_element(CONFIG_NODE, &snmp_v3_user_context_cmd);
     install_element(CONFIG_NODE, &no_snmp_v3_user_cmd);
     install_element(CONFIG_NODE, &no_snmp_v3_user_sec_cmd);
     install_element(CONFIG_NODE, &no_snmp_v3_user_sec_priv_cmd);
+    install_element(CONFIG_NODE, &no_snmp_v3_user_context_cmd);
     install_element(ENABLE_NODE, &show_snmp_agent_port_cmd);
     install_element(ENABLE_NODE, &show_snmp_community_cmd);
     install_element(ENABLE_NODE, &show_snmp_trap_cmd);
     install_element(ENABLE_NODE, &show_snmp_system_cmd);
     install_element(ENABLE_NODE, &show_snmpv3_users_cmd);
+    install_element(CONFIG_NODE, &snmp_v3_context_cmd);
+    install_element(CONFIG_NODE, &snmp_v3_context_vrf_cmd);
+    install_element(CONFIG_NODE, &no_snmp_v3_context_cmd);
+    install_element(CONFIG_NODE, &no_snmp_v3_context_vrf_cmd);
+    install_element(ENABLE_NODE, &show_snmpv3_context_cmd);
 
     retval = install_show_run_config_subcontext(e_vtysh_config_context,
                                       e_vtysh_config_context_snmp,

@@ -289,6 +289,8 @@ snmp_ovsdb_main_thread(void *arg)
            ovsdb_idl_run. */
         snmp_run(idl);
         unixctl_server_run(appctl);
+        snmp_run(idl);
+        plugins_snmp_run();
 
         /* This function adds the file descriptor for the
            DB to monitor using poll_fd_wait. */
@@ -340,6 +342,11 @@ snmpd_ovsdb_init(const char *snmp_db_path)
     ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_auth_pass_phrase);
     ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_priv_protocol);
     ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_priv_pass_phrase);
+
+    ovsdb_idl_add_table(idl, &ovsrec_table_snmpv3_context);
+    ovsdb_idl_add_column(idl, &ovsrec_snmpv3_context_col_name);
+    ovsdb_idl_add_column(idl, &ovsrec_snmpv3_context_col_vrf);
+    ovsdb_idl_add_column(idl, &ovsrec_snmpv3_context_col_community_name);
 
     VLOG_DBG("OPS snmp OVSDB Integration has been initialized");
     return;

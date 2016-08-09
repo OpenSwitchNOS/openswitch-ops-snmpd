@@ -32,6 +32,8 @@
 #define COMMUNITY_STR "The name of the community string. Default is public\n"
 #define NOTIFICATION_TYPE_STR "The SNMP notification type\n"
 #define VERSION_STR "The SNMP protocol version\n"
+#define CONTEXT_STR "The name of the context string. Default is none\n"
+#define VRF_STR "The name of the VRF string. Default is vrf_default\n"
 
 
 /* Default values */
@@ -42,6 +44,7 @@
 #define DEFAULT_TRAP_RECEIVER_UDP_PORT 162
 #define DEFAULT_AUTH "none"
 #define DEFAULT_PRIVECY "none"
+#define DEFAULT_VRF "vrf_default"
 
 
 /* MAX values */
@@ -54,6 +57,7 @@
 #define MAX_PROTOCOL_STR_LENGTH 5
 #define MAX_ALLOWED_SNMP_COMMUNITIES 10
 #define MAX_ALLOWED_SNMP_TRAPS 30
+#define MAX_CONTEXT_LENGTH 33
 
 void cli_pre_init();
 void cli_post_init();
