@@ -2243,7 +2243,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                                 tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = 0;\n'
                                 tableOvsdbGetString += '}\n'
                                 tableOvsdbGetString += 'else {\n'
-                                tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[scalarType] + ')atoi(temp);\n'
+                                tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')atoi(temp);\n'
                                 tableOvsdbGetString += '}\n'
                             else:
                                 tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')*('
@@ -2295,7 +2295,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                                 tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = 0;\n'
                                 tableOvsdbGetString += '}\n'
                                 tableOvsdbGetString += 'else {\n'
-                                tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[scalarType] + ')atoi(temp);\n'
+                                tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')atoi(temp);\n'
                                 tableOvsdbGetString += '}\n'
                             else:
                                 tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')*('
@@ -2382,7 +2382,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                                 tableOvsdbGetString += '*' + col['name'] + '_val_ptr = 0;\n'
                                 tableOvsdbGetString += '}\n'
                                 tableOvsdbGetString += 'else {\n'
-                                tableOvsdbGetString += '*' + col['name'] + '_val_ptr = (' + self.ctypeClasses[scalarType] + ')atoi(temp);\n'
+                                tableOvsdbGetString += '*' + col['name'] + '_val_ptr = (' + self.ctypeClasses[colType] + ')atoi(temp);\n'
                                 tableOvsdbGetString += '}\n'
                             else:
                                 tableOvsdbGetString += '*' + col['name'] + '_val_ptr = (' + self.ctypeClasses[colType] + ')*('
