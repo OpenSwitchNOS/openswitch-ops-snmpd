@@ -93,7 +93,7 @@ generate_snmpd_conf(const struct ovsrec_system* system_row)
         VLOG_DBG("%s: sysDescr is modified to %s",__func__,sys_description);
     }
     else {
-        fprintf(fp, "sysDescr  \"\" \n");
+        fprintf(fp, "sysDescr  %s\n", system_row->switch_version);
     }
 
     const char* sys_contact = smap_get(&system_row->other_config, "system_contact");
@@ -239,6 +239,10 @@ snmp_reconfigure(struct ovsdb_idl* idl){
                                        snmp_idl_seqno)) {
         modified = true;
     }
+    if(OVSREC_IDL_IS_COLUMN_MODIFIED(ovsrec_system_col_switch_version,
+                                       snmp_idl_seqno)) {
+        modified = true;
+    }
 
     if(modified) {
         generate_snmpd_conf(system_row);
@@ -334,6 +338,7 @@ snmpd_ovsdb_init(const char *snmp_db_path)
     ovsdb_idl_add_column(idl, &ovsrec_system_col_snmp_communities);
     ovsdb_idl_add_column(idl, &ovsrec_system_col_other_config);
     ovsdb_idl_add_column(idl, &ovsrec_system_col_system_mac);
+    ovsdb_idl_add_column(idl, &ovsrec_system_col_switch_version);
     ovsdb_idl_add_table(idl, &ovsrec_table_snmpv3_user);
     ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_user_name);
     ovsdb_idl_add_column(idl, &ovsrec_snmpv3_user_col_auth_protocol);
