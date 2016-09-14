@@ -17,7 +17,7 @@
 # Software Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
 # 02111-1307, USA.
 
-from pytest import raises
+from pytest import raises, mark
 from topology_lib_vtysh.exceptions import DuplicateCommunityException
 from topology_lib_vtysh.exceptions import MaximumCommunitiesException
 
@@ -249,6 +249,7 @@ def unconfig_snmp_v3_trap_test(sw1):
     assert result is None
 
 
+@mark.gate
 def test_vtysh_ct_snmp(topology, step):
     sw1 = topology.get("sw1")
     config_snmp_agent_port_test(sw1)
