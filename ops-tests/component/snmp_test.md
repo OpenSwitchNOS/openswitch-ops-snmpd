@@ -160,3 +160,13 @@ Verify using `show snmpv3 user` command.
 This test passes if an entry is created snmpv3 user table.
 #### Test fail criteria
 This test fails if if an entry is not created in snmpv3 user table.
+
+## Test case 10 : Verify running-configuration after config/unconfig of snmp system parameters.
+### Description
+Verify whether or not the running-configuration is updated after config/unconfig of snmp system parameters using `show running-configuration` command
+### Test result criteria
+Configure snmp server system-description, system-location, system-contact using `snmp-server system-description .LINE` , `snmp-server system-contact .LINE` and `snmp-server system-location .LINE` commands. Verify running-configuration using `show running-configuration` command. Unconfigure snmp system parameters using no form of the commands. Verify running-configuration.
+#### Test pass criteria
+This test passes if 'show running-configuration' output has the snmp system configuration commands after configuring the snmp system parameters and if `show running-configuration' output does not have the snmp system configuration commands after unconfiguring the snmp system parameters.
+#### Test fail criteria
+This test fails if 'show running-configuration' output does not have the snmp system configuration commands after configuring the snmp system parameters . This test also fails if `show running-configuration' output has the snmp system configuration commands after unconfiguring the snmp system parameters.
