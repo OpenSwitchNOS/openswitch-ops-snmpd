@@ -55,12 +55,20 @@ vtysh_ret_val vtysh_config_context_snmp_clientcallback(void *p_private) {
     bool trap_rcvr_port_not_default = false;
     bool community_not_default =  false;
     bool is_v3 = false;
+    bool is_sys_desc_configured = false;
 
     psnmp_row = ovsrec_system_first(idl);
     if (psnmp_row != NULL) {
         snmp_port = smap_get(&psnmp_row->other_config, "snmp_agent_port");
         snmp_sys_desc =
             smap_get(&psnmp_row->other_config, "system_description");
+
+        if (snmp_sys_desc != NULL)
+        {
+            if (strncmp(snmp_sys_desc, psnmp_row->switch_version, strlen(psnmp_row->switch_version)) != 0)
+                is_sys_desc_configured = true;
+        }
+
         snmp_sys_loc = smap_get(&psnmp_row->other_config, "system_location");
         snmp_sys_contact = smap_get(&psnmp_row->other_config, "system_contact");
 
@@ -68,7 +76,7 @@ vtysh_ret_val vtysh_config_context_snmp_clientcallback(void *p_private) {
             vtysh_ovsdb_cli_print(p_msg, "%s %s", "snmp-server agent-port",
                                       snmp_port);
         }
-        if (snmp_sys_desc != NULL) {
+        if (is_sys_desc_configured) {
             vtysh_ovsdb_cli_print(p_msg, "%s %s",
                                   "snmp-server system-description",
                                   snmp_sys_desc);

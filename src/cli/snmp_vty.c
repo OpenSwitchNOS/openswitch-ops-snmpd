@@ -1223,6 +1223,8 @@ DEFUN(show_snmp_system,
         if (smap_get(&snmp_row->other_config, "system_description"))
             vty_out(vty, "System description : %s\n",
                     smap_get(&snmp_row->other_config, "system_description"));
+        else
+            vty_out(vty, "System description : %s\n", snmp_row->switch_version);
         if (smap_get(&snmp_row->other_config, "system_location"))
             vty_out(vty, "System location : %s\n",
                     smap_get(&snmp_row->other_config, "system_location"));
