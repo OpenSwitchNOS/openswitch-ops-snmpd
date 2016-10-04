@@ -430,6 +430,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
         self.generatedSymbols = {}
         self.tables = {}
         self.tableRows = {}
+        self.enumSymbols = {}
         self.fileWriter = fileWriter
         self.customTypes = {}
         self.parsedMibs = {}
@@ -732,13 +733,15 @@ class NetSnmpCodeGen(AbstractCodeGen):
         return ret
 
     def getSubTypeFromSyntax(self, syntax):
-        ret = {}
         if 'SimpleSyntax' in syntax:
-            if syntax['SimpleSyntax']['objType'] in self.customTypes:
-                ret = self.customTypes[syntax['SimpleSyntax']['objType']]['subType']
+            if syntax['SimpleSyntax']['subType'] != {}:
+                return syntax['SimpleSyntax']['subType']
+            if syntax['SimpleSyntax']['objType'] in self.ctypeClasses:
+                return syntax['SimpleSyntax']['subType']
             else:
-                ret = syntax['SimpleSyntax']['subType']
-        return ret
+                return self.getSubTypeFromSyntax(self._out[syntax['SimpleSyntax']['objType']]['syntax'])
+        else:
+            return {}
 
     def getMinMaxConstraints(self, row):
         if row['syntax']['SimpleSyntax']['subType'] == {}:
@@ -769,7 +772,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
         outDict['name'] = name
         outDict['syntax'] = syntax
         outDict['UNITS'] = units
-        outDict['MaxAccessPart'] = maxaccess
+        outDict['maxaccess'] = maxaccess
         outDict['DESCRIPTION'] = description
         outDict['augmention'] = augmention
         outDict['INDEX'] = index
@@ -832,12 +835,13 @@ class NetSnmpCodeGen(AbstractCodeGen):
                             self.customTypes[name] = {'baseType':'Bits'}
                         outDict = x
                 #if 'SimpleSyntax' in declaration:
-                #    self.customTypes[name] = {'baseType':attrs['SimpleSyntax']['objType'],
+                #    self.customTypes[name] =
+                #    {'baseType':attrs['SimpleSyntax']['objType'],
                 #                              'subType':attrs['SimpleSyntax']['subType']}
                 #elif 'Bits' in declaration:
                 #    self.customTypes[name] = {'baseType':'Bits'}
                 #outDict = declaration
-                self.regSym(name, outDict)
+                self.regSym(name, {'syntax':outDict})
         outStr = '//' + name + ' genTypeDeclaration'
         return outStr
 
@@ -860,17 +864,17 @@ class NetSnmpCodeGen(AbstractCodeGen):
 
     def genBits(self, data, classmode=0):
         bits = data[0]
-        namedval = ['("' + bit[0] + '", ' + str(bit[1]) + '),' for bit in bits]
+        namedval = [(bit[0], bit[1]) for bit in bits]
         numFuncCalls = len(namedval) / 255 + 1
         funcCalls = ''
-        for i in range(int(numFuncCalls)):
-            funcCalls += 'NamedValues(' + ' '.join(namedval[255 * i:255 * (i + 1)]) + ') + '
-        funcCalls = funcCalls[:-3]
-        outStr = classmode and \
-          self.indent + 'namedValues = ' + funcCalls + '\n' or \
-          '.clone(namedValues=' + funcCalls + ')'
-        outDict = {}
-        return {'Bits': outDict}
+        #for i in range(int(numFuncCalls)):
+        #    funcCalls += 'NamedValues(' + ' '.join(namedval[255 * i:255 * (i +
+        #    1)]) + ') + '
+        #funcCalls = funcCalls[:-3]
+        #outStr = classmode and \
+        #  self.indent + 'namedValues = ' + funcCalls + '\n' or \
+        #  '.clone(namedValues=' + funcCalls + ')'
+        return {'Bits': namedval}
 
     def genCompliances(self, data, classmode=0):
         complStr = ''
@@ -943,7 +947,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                         defvalBits.append((bit, bitValue))
                     else:
                         raise error.PySmiSemanticError('no such bit as "%s" for symbol "%s"' % (bit, objname))
-                return self.genBits([defvalBits])[1]
+                return defvalBits
             else:
                 raise error.PySmiSemanticError('unknown type "%s" for defval "%s" of symbol "%s"' % (defvalType, defval, objname))
         return '.clone(' + val + ')'
@@ -1017,7 +1021,8 @@ class NetSnmpCodeGen(AbstractCodeGen):
 
     def genMaxAccess(self, data, classmode=0):
         access = data[0].replace('-', '')
-        return access != 'notaccessible' and '.setMaxAccess("' + access + '")' or ''
+        #return access != 'notaccessible' and '.setMaxAccess("' + access + '")' or ''
+        return access
 
     def genOctetStringSubType(self, data, classmode=0):
         outDict = {}
@@ -1114,7 +1119,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             outDict['subType'] = subtype
         if classmode:
             subtype = '%s' in subtype and subtype % objType or subtype # XXX hack?
-            outDict['subType'] = subtype
+            outDict['subType'] = {}
             return {'SimpleSyntax':outDict}
         out = [objType, subtype]
         return {'SimpleSyntax':outDict}
@@ -1178,7 +1183,8 @@ class NetSnmpCodeGen(AbstractCodeGen):
       #'a': lambda x: genXXX(x, 'CONSTRAINT')
     }
 
-    def getObjTypeString(self, syntax):
+    def getObjTypeString(self, sym):
+        syntax = sym['syntax']
         ret = ''
         if 'Bits' in syntax:
             return 'Bits'
@@ -1189,11 +1195,14 @@ class NetSnmpCodeGen(AbstractCodeGen):
                 syntax['SimpleSyntax']['subType'] = self.customTypes[objType]['subType']
         else:
             ret = objType
+
+        if objType in self.enumSymbols:
+            self.enumSymbols[sym['name']] = self.enumSymbols[objType]
+
         if ret not in self.ctypeClasses:
             if ret in self._out:
                 if 'SimpleSyntax' in self._out[ret]:
                     ret = self._out[ret]['SimpleSyntax']['objType']
-                    syntax['SimpleSyntax']['subType'] = self._out[ret]['SimpleSyntax']['subType']
                 elif 'Bits' in self._out[ret]:
                     ret = 'Bits'
         if ret not in self.ctypeClasses:
@@ -1292,6 +1301,9 @@ class NetSnmpCodeGen(AbstractCodeGen):
         self._presentedSyms.clear()
         self._importMap.clear()
         self._out.clear()
+        # FIXME this is hack
+        self._out[unicode('IpAddress')] = {'syntax':{'SimpleSyntax':{'objType':'OctetString', 'subType':{'octetStringSubtype':{'ValueSizeConstraint':(0,4)}}}}}
+
         self.moduleName[0], moduleOid, imports, declarations = ast
         out, importedModules = self.genImports(imports and imports or {})
         for declr in declarations and declarations or []:
@@ -1308,6 +1320,14 @@ class NetSnmpCodeGen(AbstractCodeGen):
                 tempParsedMibs[key] = value
         self.addSymbolsFromImports(tempParsedMibs)
         self.moduleName[0], moduleOid, imports, declarations = ast
+
+        for sym in self._out:
+            try:
+                if 'enumSpec' in self._out[sym]['SimpleSyntax']['subType']:
+                    self.enumSymbols[sym] = self._out[sym]['SimpleSyntax']['subType']['enumSpec']
+            except:
+                pass
+
         #for importAst in [x[2] for x in self.parsedMibs.items()]:
         #    tempModuleName, tempModuleOid, tempImports, tempDeclarations =
         #    importAst
@@ -1431,7 +1451,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                 baseType = self.customTypes[objType]['baseType']
 
             outStr = 'static '
-            if self.getObjTypeString(syntax) == 'OctetString':
+            if self.getObjTypeString(self._out[sym]) == 'OctetString':
                 if 'octetStringSubType' in syntax['SimpleSyntax']['subType']:
                     minConstraint, maxConstraint = syntax['SimpleSyntax']['subType']['octetStringSubType'].get('ValueSizeConstraint',(0,0))
                 else:
@@ -1445,11 +1465,11 @@ class NetSnmpCodeGen(AbstractCodeGen):
                         stringLength = maxConstraint
                 outStr += 'char netsnmp_' + name + '[' + str(stringLength) + '];\n'
                 outStr += 'static size_t netsnmp_' + name + '_len = 0;\n'
-            elif self.getObjTypeString(syntax) == 'ObjectIdentifier':
+            elif self.getObjTypeString(self._out[sym]) == 'ObjectIdentifier':
                 outStr += 'oid netsnmp_' + name + '[MAX_OID_LEN];\n'
                 outStr += 'static size_t netsnmp_' + name + '_len = 0;\n'
             else:
-                outStr += self.ctypeClasses[self.getObjTypeString(syntax)] + ' netsnmp_' + name + ';\n'
+                outStr += self.ctypeClasses[self.getObjTypeString(self._out[sym])] + ' netsnmp_' + name + ';\n'
             outStr += 'int handler_' + name + '(netsnmp_mib_handler *handler, netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo, netsnmp_request_info *requests);\n\n'
             outStr += 'void init_' + name + '(void) {\n'
             outStr += 'const oid ' + name + '_oid[] = ' + str(oidStr).replace('[', '{').replace(']','}') + ';\n'
@@ -1459,7 +1479,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             outStr += '}\n\n'
             outStr += 'int handler_' + name + '(netsnmp_mib_handler *handler, netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo, netsnmp_request_info *requests) {\n'
             outStr += 'if(reqinfo->mode == MODE_GET) {\n'
-            scalarType = self.getObjTypeString(syntax)
+            scalarType = self.getObjTypeString(self._out[sym])
             if not jsonValue['OvsTable']:
                 if scalarType == 'OctetString' or scalarType == 'ObjectIdentifier':
                     outStr += 'ovsdb_get_' + name + '(idl, netsnmp_' + name + ', &netsnmp_' + name + '_len);\n'
@@ -1476,7 +1496,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             elif scalarType == 'ObjectIdentifier':
                 outStr += 'snmp_set_var_typed_value(requests->requestvb, ' + self.netsnmpTypes[scalarType] + ', &netsnmp_' + name + ', netsnmp_' + name + '_len *sizeof(netsnmp_' + name + '[0]));\n'
             else:
-                outStr += 'snmp_set_var_typed_value(requests->requestvb, ' + self.netsnmpTypes[self.getObjTypeString(syntax)] + ', &netsnmp_' + name + ', sizeof(netsnmp_' + name + '));\n'
+                outStr += 'snmp_set_var_typed_value(requests->requestvb, ' + self.netsnmpTypes[self.getObjTypeString(self._out[sym])] + ', &netsnmp_' + name + ', sizeof(netsnmp_' + name + '));\n'
             outStr += '}\n'
             outStr += 'return SNMP_ERR_NOERROR;\n'
             outStr += '}\n\n'
@@ -1496,7 +1516,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             if name not in self.jsonData:
                 continue
             scalarJson = self.jsonData[name]
-            scalarType = self.getObjTypeString(scalar['syntax'])
+            scalarType = self.getObjTypeString(scalar)
             if name in self.generatedSymbols:
                 continue
             if not scalarJson['OvsTable']:
@@ -1592,7 +1612,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             if name not in self.jsonData:
                 continue
             scalarJson = self.jsonData[name]
-            scalarType = self.getObjTypeString(scalar['syntax'])
+            scalarType = self.getObjTypeString(scalar)
             if not scalarJson['OvsTable']:
                 if scalarType == 'OctetString':
                     scalarOvsdbGetHeaderString += 'void ovsdb_get_' + scalar['name'] + '(struct ovsdb_idl *idl, char *' + scalar['name'] + '_val_ptr, size_t*' + scalar['name'] + '_val_ptr_len);\n'
@@ -1624,6 +1644,8 @@ class NetSnmpCodeGen(AbstractCodeGen):
         pluginsFileString += 'void ops_snmp_init(void) {\n'
         for codeSym in self.scalarSymbols:
             name = codeSym
+            if name not in self.jsonData:
+                continue
             pluginsFileString += 'init_' + name + '();\n'
         pluginsFileString += '\n'
         for tableName in self.tables.keys():
@@ -1681,7 +1703,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
     def getLocalsStringForTable(self, tableName, indexes):
         outStr = ''
         for idx in indexes:
-            idxType = self.getObjTypeString(idx['syntax'])
+            idxType = self.getObjTypeString(idx)
             if idxType == 'OctetString':
                 stringLength = self.getStringLength(idx)
                 outStr += 'char ' + idx['name'] + '[' + str(stringLength) + '];\n'
@@ -1694,7 +1716,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
         outStr += '\n'
         for col in self.tableRows[self.tables[tableName]['row']]['columns']:
             if col['name'] not in [idx['name'] for idx in indexes]:
-                colType = self.getObjTypeString(col['syntax'])
+                colType = self.getObjTypeString(col)
                 if colType == 'OctetString':
                     stringLength = self.getStringLength(col)
                     outStr += 'char ' + col['name'] + '[' + str(stringLength) + '];\n'
@@ -1727,7 +1749,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             self.customFileHeaderString += 'int ' + self.jsonData[tableName]['SkipFunction'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + table + ' *' + table + '_row);\n\n'
         for idx in indexes:
             idxTable = self.jsonData[tableName]['Indexes'][idx['name']]['OvsTable']
-            idxType = self.getObjTypeString(idx['syntax'])
+            idxType = self.getObjTypeString(idx)
             if idxTable and idxTable != table:
                 if idxType == 'OctetString' or idxType == 'ObjectIdentifier':
                     outStr += 'ovsdb_get_' + idx['name'] + '(idl, ' + table + '_row, ' + idxTable + '_row, ' + idx['name'] + ', &' + idx['name'] + '_len);\n'
@@ -1743,7 +1765,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             if col['name'] in [idx['name'] for idx in indexes]:
                 continue
             colTable = self.jsonData[tableName]['Columns'][col['name']]['OvsTable']
-            colType = self.getObjTypeString(col['syntax'])
+            colType = self.getObjTypeString(col)
             if colTable and colTable != table:
                 if colType == 'OctetString' or colType == 'ObjectIdentifier':
                     outStr += 'ovsdb_get_' + col['name'] + '(idl, ' + table + '_row, ' + colTable + '_row, ' + col['name'] + ', &' + col['name'] + '_len);\n'
@@ -1762,7 +1784,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
         outStr += '}\n'
         outStr += 'if (MFD_SUCCESS != ' + tableName + '_indexes_set( rowreq_ctx'
         for idx in indexes:
-            idxType = self.getObjTypeString(idx['syntax'])
+            idxType = self.getObjTypeString(idx)
             if idxType == 'OctetString' or idxType == 'ObjectIdentifier':
                 outStr += ', ' + idx['name'] + ', ' + idx['name'] + '_len'
             else:
@@ -1775,7 +1797,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
         for col in self.tableRows[self.tables[tableName]['row']]['columns']:
             if col['name'] in [idx['name'] for idx in indexes]:
                 continue
-            colType = self.getObjTypeString(col['syntax'])
+            colType = self.getObjTypeString(col)
             if colType == 'OctetString' or colType == 'ObjectIdentifier':
                 outStr += 'rowreq_ctx->data.' + col['name'] + '_len = ' + col['name'] + '_len* sizeof(' + col['name'] + '[0]);\n'
                 outStr += 'memcpy(rowreq_ctx->data.' + col['name'] + ', ' + col['name'] + ', ' + col['name'] + '_len* sizeof(' + col['name'] + '[0]));\n'
@@ -1865,27 +1887,27 @@ class NetSnmpCodeGen(AbstractCodeGen):
             tableFileHeaderString += 'typedef struct ' + tableName + '_data_s {\n'
             for col in self.tableRows[self.tables[tableName]['row']]['columns']:
                 if col['name'] not in self.tableRows[self.tables[tableName]['row']]['index']:
-                    if self.getObjTypeString(col['syntax']) == 'OctetString':
+                    if self.getObjTypeString(col) == 'OctetString':
                         stringLength = self.getStringLength(col)
                         tableFileHeaderString += 'char ' + col['name'] + '[' + str(stringLength) + '];\n'
                         tableFileHeaderString += 'size_t ' + col['name'] + '_len;\n'
-                    elif self.getObjTypeString(col['syntax']) == 'ObjectIdentifier':
+                    elif self.getObjTypeString(col) == 'ObjectIdentifier':
                         tableFileHeaderString += 'oid ' + col['name'] + '[MAX_OID_LEN];\n'
                         tableFileHeaderString += 'size_t ' + col['name'] + '_len;\n'
                     else:
-                        tableFileHeaderString += self.ctypeClasses[self.getObjTypeString(col['syntax'])] + ' ' + col['name'] + ';\n'
+                        tableFileHeaderString += self.ctypeClasses[self.getObjTypeString(col)] + ' ' + col['name'] + ';\n'
             tableFileHeaderString += '} ' + tableName + '_data;\n\n'
             tableFileHeaderString += 'typedef struct ' + tableName + '_mib_index_s {\n'
             for idx in indexes:
-                if self.getObjTypeString(idx['syntax']) == 'OctetString':
+                if self.getObjTypeString(idx) == 'OctetString':
                     stringLength = self.getStringLength(idx)
                     tableFileHeaderString += 'char ' + idx['name'] + '[' + str(stringLength) + '];\n'
                     tableFileHeaderString += 'size_t ' + idx['name'] + '_len;\n'
-                elif self.getObjTypeString(idx['syntax']) == 'ObjectIdentifier':
+                elif self.getObjTypeString(idx) == 'ObjectIdentifier':
                     tableFileHeaderString += 'oid ' + idx['name'] + '[MAX_OID_LEN];\n'
                     tableFileHeaderString += 'size_t ' + idx['name'] + '_len;\n'
                 else:
-                    tableFileHeaderString += self.ctypeClasses[self.getObjTypeString(idx['syntax'])] + ' ' + idx['name'] + ';\n'
+                    tableFileHeaderString += self.ctypeClasses[self.getObjTypeString(idx)] + ' ' + idx['name'] + ';\n'
             tableFileHeaderString += '} ' + tableName + '_mib_index;\n\n'
             #tableFileHeaderString += '#define MAX_' + tableName+'_IDX_LEN 1'
             tableFileHeaderString += 'typedef struct ' + tableName + '_rowreq_ctx_s {\n'
@@ -1932,14 +1954,14 @@ class NetSnmpCodeGen(AbstractCodeGen):
             self.fileWrite(fileName=tableName + '_oids.h',data=tableOidsHeaderString)
 
             tableDataGetString = """#include <net-snmp/net-snmp-config.h>
-    #include <net-snmp/net-snmp-features.h>
-    #include <net-snmp/net-snmp-includes.h>
-    #include <net-snmp/agent/net-snmp-agent-includes.h>
-    """
+#include <net-snmp/net-snmp-features.h>
+#include <net-snmp/net-snmp-includes.h>
+#include <net-snmp/agent/net-snmp-agent-includes.h>
+"""
             tableDataGetString += '#include "' + tableName + '.h"\n\n'
             tableDataGetString += 'int ' + tableName + '_indexes_set_tbl_idx(' + tableName + '_mib_index *tbl_idx'
             for idx in indexes:
-                idxType = self.getObjTypeString(idx['syntax'])
+                idxType = self.getObjTypeString(idx)
                 if idxType == 'OctetString' or idxType == 'ObjectIdentifier':
                     tableDataGetString += ', '
                     if idxType == 'OctetString':
@@ -1953,7 +1975,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             tableDataGetString += ') {\n'
             tableDataGetString += 'DEBUGMSGTL(("verbose:' + tableName + ':' + tableName + '_indexes_set_tbl_idx","called\\n"));\n\n'
             for idx in indexes:
-                idxType = self.getObjTypeString(idx['syntax'])
+                idxType = self.getObjTypeString(idx)
                 if idxType == 'OctetString' or idxType == 'ObjectIdentifier':
                     tableDataGetString += '\ntbl_idx->' + idx['name'] + '_len = sizeof(tbl_idx->' + idx['name'] + ')/sizeof(tbl_idx->' + idx['name'] + '[0]);\n'
                     tableDataGetString += 'if ((NULL == tbl_idx->' + idx['name'] + ') || (tbl_idx->' + idx['name'] + '_len < (' + idx['name'] + '_val_ptr_len))) {\n'
@@ -1968,7 +1990,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             tableDataGetString += '}\n\n'
             tableDataGetString += 'int ' + tableName + '_indexes_set(' + tableName + '_rowreq_ctx *rowreq_ctx'
             for idx in indexes:
-                idxType = self.getObjTypeString(idx['syntax'])
+                idxType = self.getObjTypeString(idx)
                 if idxType == 'OctetString' or idxType == 'ObjectIdentifier':
                     tableDataGetString += ', '
                     if idxType == 'OctetString':
@@ -1977,12 +1999,12 @@ class NetSnmpCodeGen(AbstractCodeGen):
                         tableDataGetString += 'oid *'
                     tableDataGetString += idx['name'] + '_val_ptr, size_t ' + idx['name'] + '_val_ptr_len'
                 else:
-                    tableDataGetString += ', ' + self.ctypeClasses[self.getObjTypeString(idx['syntax'])] + ' ' + idx['name'] + '_val'
+                    tableDataGetString += ', ' + self.ctypeClasses[self.getObjTypeString(idx)] + ' ' + idx['name'] + '_val'
             tableDataGetString += ') {\n'
             tableDataGetString += 'DEBUGMSGTL(("verbose:' + tableName + ':' + tableName + '_indexes_set","called\\n"));\n'
             tableDataGetString += 'if (MFD_SUCCESS != ' + tableName + '_indexes_set_tbl_idx(&rowreq_ctx->tbl_idx'
             for idx in indexes:
-                idxType = self.getObjTypeString(idx['syntax'])
+                idxType = self.getObjTypeString(idx)
                 if idxType == 'OctetString' or idxType == 'ObjectIdentifier':
                     tableDataGetString += ', ' + idx['name'] + '_val_ptr, ' + idx['name'] + '_val_ptr_len\n'
                 else:
@@ -1996,11 +2018,43 @@ class NetSnmpCodeGen(AbstractCodeGen):
             tableDataGetString += '}\n'
             tableDataGetString += 'return MFD_SUCCESS;\n'
             tableDataGetString += '}\n\n'
+            for idx in indexes:
+                if idx['maxaccess'] == 'notaccessible':
+                    continue
+                tableDataGetString += 'int ' + idx['name'] + '_get(' + tableName + '_rowreq_ctx *rowreq_ctx, '
+                idxType = self.getObjTypeString(idx)
+                if idxType == 'OctetString' or idxType == 'ObjectIdentifier':
+                    if idxType == 'OctetString':
+                        tableDataGetString += 'char **'
+                    else:
+                        tableDataGetString += 'oid **'
+                    tableDataGetString += idx['name'] + '_val_ptr_ptr, size_t *' + idx['name'] + '_val_ptr_len_ptr) {\n'
+                    tableDataGetString += 'netsnmp_assert( (NULL != ' + idx['name'] + '_val_ptr_ptr) && (NULL != *' + idx['name'] + '_val_ptr_ptr));\n'
+                    tableDataGetString += 'netsnmp_assert(NULL != ' + idx['name'] + '_val_ptr_len_ptr);\n'
+                else:
+                    tableDataGetString += self.ctypeClasses[idxType] + ' *' + idx['name'] + '_val_ptr) {\n'
+                    tableDataGetString += 'netsnmp_assert(NULL != ' + idx['name'] + '_val_ptr);\n'
+                tableDataGetString += 'DEBUGMSGTL(("verbose:' + tableName + ':' + idx['name'] + '_get","called\\n"));\n'
+                tableDataGetString += 'netsnmp_assert(NULL != rowreq_ctx);\n\n'
+                if idxType == 'OctetString' or idxType == 'ObjectIdentifier':
+                    tableDataGetString += 'if ((NULL == (*' + idx['name'] + '_val_ptr_ptr)) || ((*' + idx['name'] + '_val_ptr_len_ptr) < (rowreq_ctx->tbl_idx.' + idx['name'] + '_len* sizeof(rowreq_ctx->tbl_idx.' + idx['name'] + '[0])))) {\n'
+                    tableDataGetString += '(* ' + idx['name'] + '_val_ptr_ptr) = malloc(rowreq_ctx->tbl_idx.' + idx['name'] + '_len* sizeof(rowreq_ctx->tbl_idx.' + idx['name'] + '[0]));\n'
+                    tableDataGetString += 'if (NULL == (*' + idx['name'] + '_val_ptr_ptr)) {\n'
+                    tableDataGetString += 'snmp_log(LOG_ERR, "could not allocate memory (rowreq_ctx->tbl_idx.' + idx['name'] + ')\\n");\n'
+                    tableDataGetString += 'return MFD_ERROR;\n'
+                    tableDataGetString += '}\n'
+                    tableDataGetString += '}\n'
+                    tableDataGetString += '(* ' + idx['name'] + '_val_ptr_len_ptr) = rowreq_ctx->tbl_idx.' + idx['name'] + '_len* sizeof(rowreq_ctx->tbl_idx.' + idx['name'] + '[0]);\n'
+                    tableDataGetString += 'memcpy((*' + idx['name'] + '_val_ptr_ptr), rowreq_ctx->tbl_idx.' + idx['name'] + ', rowreq_ctx->tbl_idx.' + idx['name'] + '_len* sizeof(rowreq_ctx->tbl_idx.' + idx['name'] + '[0]));\n'
+                else:
+                    tableDataGetString += '(*' + idx['name'] + '_val_ptr) = rowreq_ctx->tbl_idx.' + idx['name'] + ';\n'
+                tableDataGetString += 'return MFD_SUCCESS;\n'
+                tableDataGetString += '}\n\n'
             for col in self.tableRows[self.tables[tableName]['row']]['columns']:
-                if col['name'] in [idx['name'] for idx in indexes]:
+                if col['name'] in [idx['name'] for idx in indexes] or col['maxaccess'] == 'notaccessible':
                     continue
                 tableDataGetString += 'int ' + col['name'] + '_get(' + tableName + '_rowreq_ctx *rowreq_ctx, '
-                colType = self.getObjTypeString(col['syntax'])
+                colType = self.getObjTypeString(col)
                 if colType == 'OctetString' or colType == 'ObjectIdentifier':
                     if colType == 'OctetString':
                         tableDataGetString += 'char **'
@@ -2031,11 +2085,21 @@ class NetSnmpCodeGen(AbstractCodeGen):
             self.fileWrite(fileName=tableName + '_data_get.c',data=tableDataGetString)
 
             tableDataGetHeaderString = '#ifndef ' + tableName.upper() + '_DATA_GET_H\n'
-            tableDataGetHeaderString += '#define ' + tableName.upper() + '_DATA_GET_H\n'
-            for col in self.tableRows[self.tables[tableName]['row']]['columns']:
-                if col['name'] in [idx['name'] for idx in indexes]:
+            tableDataGetHeaderString += '#define ' + tableName.upper() + '_DATA_GET_H\n\n'
+            for idx in indexes:
+                if idx['maxaccess'] == 'notaccessible':
                     continue
-                colType = self.getObjTypeString(col['syntax'])
+                idxType = self.getObjTypeString(idx)
+                if idxType == 'OctetString':
+                    tableDataGetHeaderString += 'int ' + idx['name'] + '_get(' + tableName + '_rowreq_ctx *rowreq_ctx, char **' + idx['name'] + '_val_ptr_ptr, size_t *' + idx['name'] + '_val_ptr_len_ptr);\n\n'
+                elif idxType == 'ObjectIdentifier':
+                    tableDataGetHeaderString += 'int ' + idx['name'] + '_get(' + tableName + '_rowreq_ctx *rowreq_ctx, oid **' + idx['name'] + '_val_ptr_ptr, size_t *' + idx['name'] + '_val_ptr_len_ptr);\n\n'
+                else:
+                    tableDataGetHeaderString += 'int ' + idx['name'] + '_get(' + tableName + '_rowreq_ctx *rowreq_ctx,' + self.ctypeClasses[idxType] + ' *' + idx['name'] + '_val_ptr);\n\n'
+            for col in self.tableRows[self.tables[tableName]['row']]['columns']:
+                if col['name'] in [idx['name'] for idx in indexes] or col['maxaccess'] == 'notaccessible':
+                    continue
+                colType = self.getObjTypeString(col)
                 if colType == 'OctetString':
                     tableDataGetHeaderString += 'int ' + col['name'] + '_get(' + tableName + '_rowreq_ctx *rowreq_ctx, char **' + col['name'] + '_val_ptr_ptr, size_t *' + col['name'] + '_val_ptr_len_ptr);\n\n'
                 elif colType == 'ObjectIdentifier':
@@ -2044,7 +2108,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                     tableDataGetHeaderString += 'int ' + col['name'] + '_get(' + tableName + '_rowreq_ctx *rowreq_ctx,' + self.ctypeClasses[colType] + ' *' + col['name'] + '_val_ptr);\n\n'
             tableDataGetHeaderString += 'int ' + tableName + '_indexes_set_tbl_idx(' + tableName + '_mib_index *tbl_idx'
             for idx in indexes:
-                idxType = self.getObjTypeString(idx['syntax'])
+                idxType = self.getObjTypeString(idx)
                 if idxType == 'OctetString':
                     tableDataGetHeaderString += ', char *' + idx['name'] + '_val_ptr, size_t ' + idx['name'] + '_val_ptr_len'
                 elif idxType == 'ObjectIdentifier':
@@ -2054,7 +2118,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             tableDataGetHeaderString += ');\n\n'
             tableDataGetHeaderString += 'int ' + tableName + '_indexes_set(' + tableName + '_rowreq_ctx *rowreq_ctx'
             for idx in indexes:
-                idxType = self.getObjTypeString(idx['syntax'])
+                idxType = self.getObjTypeString(idx)
                 if idxType == 'OctetString':
                     tableDataGetHeaderString += ', char *' + idx['name'] + '_val_ptr, size_t ' + idx['name'] + '_val'
                 elif idxType == 'ObjectIdentifier':
@@ -2168,7 +2232,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             for idx in indexes:
                 dbIdx = self.jsonData[tableName]['Indexes'][idx['name']]
                 idxTable = dbIdx['OvsTable']
-                idxType = self.getObjTypeString(idx['syntax'])
+                idxType = self.getObjTypeString(idx)
                 if idx['name'] in self.generatedSymbols:
                     continue
                 if not idxTable:
@@ -2243,7 +2307,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                                 tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = 0;\n'
                                 tableOvsdbGetString += '}\n'
                                 tableOvsdbGetString += 'else {\n'
-                                tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')atoi(temp);\n'
+                                tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[scalarType] + ')atoi(temp);\n'
                                 tableOvsdbGetString += '}\n'
                             else:
                                 tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')*('
@@ -2295,7 +2359,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                                 tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = 0;\n'
                                 tableOvsdbGetString += '}\n'
                                 tableOvsdbGetString += 'else {\n'
-                                tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')atoi(temp);\n'
+                                tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[scalarType] + ')atoi(temp);\n'
                                 tableOvsdbGetString += '}\n'
                             else:
                                 tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')*('
@@ -2308,7 +2372,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                     continue
                 dbCol = self.jsonData[tableName]['Columns'][col['name']]
                 colTable = dbCol['OvsTable']
-                colType = self.getObjTypeString(col['syntax'])
+                colType = self.getObjTypeString(col)
                 if not colTable:
                     tableOvsdbGetString += 'void ovsdb_get_' + col['name'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, '
                     if colType == 'OctetString':
@@ -2456,7 +2520,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             for idx in indexes:
                 dbIdx = self.jsonData[tableName]['Indexes'][idx['name']]
                 idxTable = dbIdx['OvsTable']
-                idxType = self.getObjTypeString(idx['syntax'])
+                idxType = self.getObjTypeString(idx)
                 if not idxTable:
                     tableOvsdbGetHeaderString += 'void ovsdb_get_' + idx['name'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, '
                     if idxType == 'OctetString':
@@ -2487,7 +2551,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                     continue
                 dbCol = self.jsonData[tableName]['Columns'][col['name']]
                 colTable = dbCol['OvsTable']
-                colType = self.getObjTypeString(col['syntax'])
+                colType = self.getObjTypeString(col)
                 if not colTable:
                     tableOvsdbGetHeaderString += 'void ovsdb_get_' + col['name'] + '(struct ovsdb_idl *idl, const struct ovsrec_' + rootDbTable + ' *' + rootDbTable + '_row, '
                     if colType == 'OctetString':
@@ -2516,8 +2580,22 @@ class NetSnmpCodeGen(AbstractCodeGen):
             self.fileWrite(fileName=tableName + '_ovsdb_get.h',data=tableOvsdbGetHeaderString)
 
             tableEnumsHeaderString = '#ifndef ' + tableName.upper() + '_ENUMS_H\n'
-            tableEnumsHeaderString += '#define ' + tableName.upper() + '_ENUMS_H\n'
-            tableEnumsHeaderString += '#endif\n'
+            tableEnumsHeaderString += '#define ' + tableName.upper() + '_ENUMS_H\n\n'
+            for idx in indexes:
+                if idx['name'] in self.enumSymbols:
+                    for x in self.enumSymbols[idx['name']]:
+                        name, val = x
+                        tableEnumsHeaderString += '#define D_' + idx['name'].upper() + '_' + name.upper() + ' ' + str(val) + '\n'
+                    tableEnumsHeaderString += '\n'
+
+            for col in self.tableRows[self.tables[tableName]['row']]['columns']:
+                if col['name'] in self.enumSymbols:
+                    for x in self.enumSymbols[col['name']]:
+                        name, val = x
+                        tableEnumsHeaderString += '#define D_' + col['name'].upper() + '_' + name.upper() + ' ' + str(val) + '\n'
+                    tableEnumsHeaderString += '\n'
+
+            tableEnumsHeaderString += '#endif\n\n'
             self.fileWrite(fileName=tableName + '_enums.h',data=tableEnumsHeaderString)
 
             tableInterfaceString = """#include <net-snmp/net-snmp-config.h>
@@ -2569,7 +2647,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             tableInterfaceString += 'DEBUGMSGTL(("internal:' + tableName + ':_' + tableName + '_initialize_interface","called\\n"));\n\n'
             tableInterfaceString += 'netsnmp_table_helper_add_indexes(tbl_info'
             for idx in indexes:
-                tableInterfaceString += ', ' + self.netsnmpTypes[self.getObjTypeString(idx['syntax'])]
+                tableInterfaceString += ', ' + self.netsnmpTypes[self.getObjTypeString(idx)]
             tableInterfaceString += ', 0);\n\n'
             tableInterfaceString += 'tbl_info->min_column = ' + tableName.upper() + '_MIN_COL;\n'
             tableInterfaceString += 'tbl_info->max_column = ' + tableName.upper() + '_MAX_COL;\n'
@@ -2648,14 +2726,14 @@ class NetSnmpCodeGen(AbstractCodeGen):
             tableInterfaceString += '\n'
             for index, idx in enumerate(indexes):
                 tableInterfaceString += 'memset( &var_' + idx['name'] + ', 0x00, sizeof(var_' + idx['name'] + '));\n'
-                tableInterfaceString += 'var_' + idx['name'] + '.type = ' + self.netsnmpTypes[self.getObjTypeString(idx['syntax'])] + ';\n'
+                tableInterfaceString += 'var_' + idx['name'] + '.type = ' + self.netsnmpTypes[self.getObjTypeString(idx)] + ';\n'
                 if index is not len(indexes) - 1:
                     tableInterfaceString += 'var_' + idx['name'] + '.next_variable = &var_' + indexes[index + 1]['name'] + ';\n\n'
                 else:
                     tableInterfaceString += 'var_' + idx['name'] + '.next_variable = NULL;\n\n'
             tableInterfaceString += 'DEBUGMSGTL(("verbose:' + tableName + ':' + tableName + '_index_to_oid","called\\n"));\n\n'
             for idx in indexes:
-                idxType = self.getObjTypeString(idx['syntax'])
+                idxType = self.getObjTypeString(idx)
                 if idxType == 'OctetString' or idxType == 'ObjectIdentifier':
                     tableInterfaceString += 'snmp_set_var_value(&var_' + idx['name'] + ',&mib_idx->' + idx['name'] + ',mib_idx->' + idx['name'] + '_len * sizeof(mib_idx->' + idx['name'] + '[0]));\n'
                 else:
@@ -2674,7 +2752,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             tableInterfaceString += '\n'
             for index, idx in enumerate(indexes):
                 tableInterfaceString += 'memset(&var_' + idx['name'] + ', 0x00, sizeof(var_' + idx['name'] + '));\n'
-                tableInterfaceString += 'var_' + idx['name'] + '.type = ' + self.netsnmpTypes[self.getObjTypeString(idx['syntax'])] + ';\n'
+                tableInterfaceString += 'var_' + idx['name'] + '.type = ' + self.netsnmpTypes[self.getObjTypeString(idx)] + ';\n'
                 if index is not len(indexes) - 1:
                     tableInterfaceString += 'var_' + idx['name'] + '.next_variable = &var_' + indexes[index + 1]['name'] + ';\n\n'
                 else:
@@ -2683,7 +2761,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             tableInterfaceString += 'err = parse_oid_indexes( oid_idx->oids, oid_idx->len, &var_' + indexes[0]['name'] + ');\n'
             tableInterfaceString += 'if (err == SNMP_ERR_NOERROR) {\n'
             for idx in indexes:
-                idxType = self.getObjTypeString(idx['syntax'])
+                idxType = self.getObjTypeString(idx)
                 if idxType == 'OctetString' or idxType == 'ObjectIdentifier':
                     tableInterfaceString += 'if (var_' + idx['name'] + '.val_len > sizeof(mib_idx->' + idx['name'] + ')) {\n'
                     tableInterfaceString += 'err = SNMP_ERR_GENERR;\n'
@@ -2693,7 +2771,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                     tableInterfaceString += 'mib_idx->' + idx['name'] + '_len = var_' + idx['name'] + '.val_len/ sizeof(mib_idx->' + idx['name'] + '[0]);\n'
                     tableInterfaceString += '}\n'
                 else:
-                    tableInterfaceString += 'mib_idx->' + idx['name'] + ' = *((' + self.ctypeClasses[self.getObjTypeString(idx['syntax'])] + '*)var_' + idx['name'] + '.val.string);\n'
+                    tableInterfaceString += 'mib_idx->' + idx['name'] + ' = *((' + self.ctypeClasses[self.getObjTypeString(idx)] + '*)var_' + idx['name'] + '.val.string);\n'
             tableInterfaceString += '}\n\n'
             tableInterfaceString += 'snmp_reset_var_buffers(&var_' + indexes[0]['name'] + ');\n'
             tableInterfaceString += 'return err;\n'
@@ -2776,11 +2854,43 @@ class NetSnmpCodeGen(AbstractCodeGen):
             tableInterfaceString += 'DEBUGMSGTL(("internal:' + tableName + ':_mfd_' + tableName + '_get_column","called for %d\\n",column));\n\n'
             tableInterfaceString += 'netsnmp_assert(NULL != rowreq_ctx);\n\n'
             tableInterfaceString += 'switch(column) {\n'
+            for idx in indexes:
+                if idx['maxaccess'] == 'notaccessible':
+                    continue
+                tableInterfaceString += 'case COLUMN_' + idx['name'].upper() + ':{\n'
+                idxType = self.getObjTypeString(idx)
+                if idxType == 'Bits':
+                    tableInterfaceString += 'u_long mask = (u_long)0xff << ((sizeof(char)-1)*8);\n'
+                    tableInterfaceString += 'int idx = 0;\n'
+                    tableInterfaceString += 'var->type =  ASN_OCTET_STR;\n'
+                    tableInterfaceString += 'rc = ' + idx['name'] + '_get(rowreq_ctx, (u_long *)var->val.string);\n'
+                    tableInterfaceString += 'var->val_len = 0;\n'
+                    tableInterfaceString += 'while( 0 != mask) {\n'
+                    tableInterfaceString += '++idx;\n'
+                    tableInterfaceString += 'if(*((u_long*)var->val.string)&mask)\n'
+                    tableInterfaceString += 'var->val_len = idx;\n'
+                    tableInterfaceString += 'mask = mask >> 8;\n'
+                    tableInterfaceString += '}\n'
+                    tableInterfaceString += '}\n'
+                elif idxType == 'OctetString':
+                    tableInterfaceString += 'var->type = ' + self.netsnmpTypes[self.getObjTypeString(idx)] + ';\n'
+                    tableInterfaceString += 'rc = ' + idx['name'] + '_get(rowreq_ctx, (char **)&var->val.string, &var->val_len);\n'
+                    tableInterfaceString += '}\n'
+                elif idxType == 'ObjectIdentifier':
+                    tableInterfaceString += 'var->type = ' + self.netsnmpTypes[self.getObjTypeString(idx)] + ';\n'
+                    tableInterfaceString += 'rc = ' + idx['name'] + '_get(rowreq_ctx, (oid **)&var->val.string, &var->val_len);\n'
+                    tableInterfaceString += '}\n'
+                else:
+                    tableInterfaceString += 'var->type = ' + self.netsnmpTypes[self.getObjTypeString(idx)] + ';\n'
+                    tableInterfaceString += 'var->val_len = sizeof(' + self.ctypeClasses[idxType] + ');\n'
+                    tableInterfaceString += 'rc = ' + idx['name'] + '_get(rowreq_ctx, (' + self.ctypeClasses[idxType] + '*)var->val.string);\n'
+                    tableInterfaceString += '}\n'
+                tableInterfaceString += 'break;\n'
             for col in self.tableRows[self.tables[tableName]['row']]['columns']:
-                if col['name'] in self.tableRows[self.tables[tableName]['row']]['index']:
+                if col['name'] in self.tableRows[self.tables[tableName]['row']]['index'] or col['maxaccess'] == 'notaccessible':
                     continue
                 tableInterfaceString += 'case COLUMN_' + col['name'].upper() + ':{\n'
-                colType = self.getObjTypeString(col['syntax'])
+                colType = self.getObjTypeString(col)
                 if colType == 'Bits':
                     tableInterfaceString += 'u_long mask = (u_long)0xff << ((sizeof(char)-1)*8);\n'
                     tableInterfaceString += 'int idx = 0;\n'
@@ -2795,15 +2905,15 @@ class NetSnmpCodeGen(AbstractCodeGen):
                     tableInterfaceString += '}\n'
                     tableInterfaceString += '}\n'
                 elif colType == 'OctetString':
-                    tableInterfaceString += 'var->type = ' + self.netsnmpTypes[self.getObjTypeString(col['syntax'])] + ';\n'
+                    tableInterfaceString += 'var->type = ' + self.netsnmpTypes[self.getObjTypeString(col)] + ';\n'
                     tableInterfaceString += 'rc = ' + col['name'] + '_get(rowreq_ctx, (char **)&var->val.string, &var->val_len);\n'
                     tableInterfaceString += '}\n'
                 elif colType == 'ObjectIdentifier':
-                    tableInterfaceString += 'var->type = ' + self.netsnmpTypes[self.getObjTypeString(col['syntax'])] + ';\n'
+                    tableInterfaceString += 'var->type = ' + self.netsnmpTypes[self.getObjTypeString(col)] + ';\n'
                     tableInterfaceString += 'rc = ' + col['name'] + '_get(rowreq_ctx, (oid **)&var->val.string, &var->val_len);\n'
                     tableInterfaceString += '}\n'
                 else:
-                    tableInterfaceString += 'var->type = ' + self.netsnmpTypes[self.getObjTypeString(col['syntax'])] + ';\n'
+                    tableInterfaceString += 'var->type = ' + self.netsnmpTypes[self.getObjTypeString(col)] + ';\n'
                     tableInterfaceString += 'var->val_len = sizeof(' + self.ctypeClasses[colType] + ');\n'
                     tableInterfaceString += 'rc = ' + col['name'] + '_get(rowreq_ctx, (' + self.ctypeClasses[colType] + '*)var->val.string);\n'
                     tableInterfaceString += '}\n'
@@ -3098,7 +3208,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
             notificationFileString += 'goto loop_cleanup;\n'
             notificationFileString += '}\n\n'
             for obj in trapSym['objects']:
-                objSym = self.notificationTypes[self.getObjTypeString({'SimpleSyntax':{'objType':self.symbolTable[obj.items()[0][0]][obj.items()[0][1]]['syntax'][0][0]}})]
+                objSym = self.notificationTypes[self.getObjTypeString(self._out[obj.items()[0][1]])]
                 notificationFileString += 'status = snmp_add_var(pdu, objid_' + obj.items()[0][1] + ', sizeof(objid_' + obj.items()[0][1] + ')/sizeof(oid), \'' + objSym + '\', ' + obj.items()[0][1] + '_value);\n'
                 notificationFileString += 'if (status != 0) {\n'
                 notificationFileString += 'VLOG_ERR("Failed to add var ' + obj.items()[0][1] + ' to pdu %d",status);\n'
@@ -3136,6 +3246,8 @@ class NetSnmpCodeGen(AbstractCodeGen):
         # headerString += 'void unregister_' + moduleName + '(void);\n'
         for codeSym in self.scalarSymbols:
             name = codeSym
+            if name not in self.jsonData:
+                continue
             headerString += 'void init_' + name + '(void);\n'
             #headerString += 'void shutdown_' + name + '(void);\n\n'
         headerString += '#endif'
