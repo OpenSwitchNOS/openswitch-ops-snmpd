@@ -430,6 +430,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
         self.generatedSymbols = {}
         self.tables = {}
         self.tableRows = {}
+        self.enumSymbols = {}
         self.fileWriter = fileWriter
         self.customTypes = {}
         self.parsedMibs = {}
@@ -1193,7 +1194,6 @@ class NetSnmpCodeGen(AbstractCodeGen):
             if ret in self._out:
                 if 'SimpleSyntax' in self._out[ret]:
                     ret = self._out[ret]['SimpleSyntax']['objType']
-                    syntax['SimpleSyntax']['subType'] = self._out[ret]['SimpleSyntax']['subType']
                 elif 'Bits' in self._out[ret]:
                     ret = 'Bits'
         if ret not in self.ctypeClasses:
@@ -1292,6 +1292,9 @@ class NetSnmpCodeGen(AbstractCodeGen):
         self._presentedSyms.clear()
         self._importMap.clear()
         self._out.clear()
+        # FIXME this is hack
+        self._out[unicode('IpAddress')] = {'SimpleSyntax':{'objType':'OctetString', 'subType':{'octetStringSubtype':{'ValueSizeConstraint':(0,4)}}}}
+
         self.moduleName[0], moduleOid, imports, declarations = ast
         out, importedModules = self.genImports(imports and imports or {})
         for declr in declarations and declarations or []:
@@ -1299,6 +1302,13 @@ class NetSnmpCodeGen(AbstractCodeGen):
                 clausetype = declr[0]
                 classmode = clausetype == 'typeDeclaration'
                 self.handlersTable[declr[0]](self, self.prepData(declr[1:], classmode), classmode)
+
+        for sym in self._out:
+            try:
+                if 'enumSpec' in self._out[sym]['SimpleSyntax']['subType']:
+                    self.enumSymbols[sym] = self._out[sym]['SimpleSyntax']['subType']['enumSpec']
+            except:
+                pass
 
         # Removing the current MIB from this as it was evaluated above
         tempParsedMibs = {}
@@ -2243,7 +2253,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                                 tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = 0;\n'
                                 tableOvsdbGetString += '}\n'
                                 tableOvsdbGetString += 'else {\n'
-                                tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')atoi(temp);\n'
+                                tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[scalarType] + ')atoi(temp);\n'
                                 tableOvsdbGetString += '}\n'
                             else:
                                 tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')*('
@@ -2295,7 +2305,7 @@ class NetSnmpCodeGen(AbstractCodeGen):
                                 tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = 0;\n'
                                 tableOvsdbGetString += '}\n'
                                 tableOvsdbGetString += 'else {\n'
-                                tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')atoi(temp);\n'
+                                tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[scalarType] + ')atoi(temp);\n'
                                 tableOvsdbGetString += '}\n'
                             else:
                                 tableOvsdbGetString += '*' + idx['name'] + '_val_ptr = (' + self.ctypeClasses[idxType] + ')*('
@@ -2517,7 +2527,12 @@ class NetSnmpCodeGen(AbstractCodeGen):
 
             tableEnumsHeaderString = '#ifndef ' + tableName.upper() + '_ENUMS_H\n'
             tableEnumsHeaderString += '#define ' + tableName.upper() + '_ENUMS_H\n'
-            tableEnumsHeaderString += '#endif\n'
+            tableEnumsHeaderString += '#endif\n\n'
+            for symbol in self.enumSymbols:
+                for x in self.enumSymbols[symbol]:
+                    name, val = x
+                    tableEnumsHeaderString += '#define ' + symbol.upper() + '_'+name.upper() +' '+str(val)+'\n'
+                tableEnumsHeaderString += '\n'
             self.fileWrite(fileName=tableName + '_enums.h',data=tableEnumsHeaderString)
 
             tableInterfaceString = """#include <net-snmp/net-snmp-config.h>
