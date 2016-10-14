@@ -101,6 +101,7 @@ void ops_snmpd_exit(struct unixctl_conn *conn, int argc OVS_UNUSED,
 {
     bool *exiting = exiting_;
     *exiting = true;
+    keep_running = 0;
     unixctl_command_reply(conn, NULL);
 }
 

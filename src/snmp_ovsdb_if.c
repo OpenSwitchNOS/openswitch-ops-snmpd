@@ -16,7 +16,7 @@
 
 struct ovsdb_idl *idl;
 unsigned int snmp_idl_seqno;
-bool snmp_exit = false;
+extern bool exiting;
 
 VLOG_DEFINE_THIS_MODULE (snmp_ovsdb_if);
 
@@ -285,8 +285,8 @@ snmp_ovsdb_main_thread(void *arg)
 
     appctl = (struct unixctl_server *)arg;
 
-    snmp_exit = false;
-    while (!snmp_exit) {
+    exiting = false;
+    while (!exiting) {
         SNMP_OVSDB_LOCK;
 
         /* This function updates the Cache by running
@@ -300,12 +300,12 @@ snmp_ovsdb_main_thread(void *arg)
         unixctl_server_wait(appctl);
 
         SNMP_OVSDB_UNLOCK;
-        if (snmp_exit) {
+        if (exiting) {
             poll_immediate_wake();
         } else {
             poll_block();
             if (should_service_stop()) {
-                snmp_exit = true;
+                exiting = true;
             }
         }
     }
